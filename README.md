@@ -15,7 +15,7 @@ GasPot will run as downloaded above with no modifications. However to make sure 
 
 ## Run GasPot
 		
-	pythong GasPot.py
+	python GasPot.py
 	
 ## Review Logs
 All connections will be logged locally to the all_attempts.log file created in the directory that GasPot is ran from. 
