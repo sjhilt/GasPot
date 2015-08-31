@@ -28,55 +28,70 @@ BUFFER_SIZE = config.get('host', 'buffer_size')
 NOW = datetime.datetime.utcnow()
 FILLSTART = NOW - datetime.timedelta(minutes=313)
 FILLSTOP = NOW - datetime.timedelta(minutes=303)
+
+# Get the localized decimal separator
+DS = config.get('parameters', 'decimal_separator')
+
 # Default Product names, changed based on config.ini file
 PRODUCT1 = config.get('products', 'product1').ljust(22)
 PRODUCT2 = config.get('products', 'product2').ljust(22)
 PRODUCT3 = config.get('products', 'product3').ljust(22)
 PRODUCT4 = config.get('products', 'product4').ljust(22)
 
+
+
 # Create random Numbers for the volumes
 #
 # this will crate an initial Volume and then the second value based
 # off the orig value.
-Vol1 = random.randint(1000, 9050)
+min_vol = config.getint('parameters', 'min_vol')
+max_vol = config.getint('parameters', 'max_vol')
+Vol1 = random.randint(min_vol, max_vol)
 vol1tc = random.randint(Vol1, Vol1+200)
-Vol2 = random.randint(1000, 9050)
+Vol2 = random.randint(min_vol, max_vol)
 vol2tc = random.randint(Vol2, Vol2+200)
-Vol3 = random.randint(1000, 9050)
+Vol3 = random.randint(min_vol, max_vol)
 vol3tc = random.randint(Vol3, Vol3+200)
-Vol4 = random.randint(1000, 9050)
+Vol4 = random.randint(min_vol, max_vol)
 vol4tc = random.randint(Vol4, Vol4+200)
 
 # unfilled space ULLAGE
-ullage1 = str(random.randint(3000, 9999))
-ullage2 = str(random.randint(3000, 9999))
-ullage3 = str(random.randint(3000, 9999))
-ullage4 = str(random.randint(3000, 9999))
+min_ullage = config.getint('parameters', 'min_ullage')
+max_ullage = config.getint('parameters', 'max_ullage')
+ullage1 = str(random.randint(min_ullage, max_ullage))
+ullage2 = str(random.randint(min_ullage, max_ullage))
+ullage3 = str(random.randint(min_ullage, max_ullage))
+ullage4 = str(random.randint(min_ullage, max_ullage))
 
 # Height of tank
-height1 = str(random.randint(25, 75)) + "." + str(random.randint(10, 99))
-height2 = str(random.randint(25, 75)) + "." + str(random.randint(10, 99))
-height3 = str(random.randint(25, 75)) + "." + str(random.randint(10, 99))
-height4 = str(random.randint(25, 75)) + "." + str(random.randint(10, 99))
+min_height = config.getint('parameters', 'min_height')
+max_height = config.getint('parameters', 'max_height')
+height1 = str(random.randint(min_height, max_height)) + DS + str(random.randint(10, 99))
+height2 = str(random.randint(min_height, max_height)) + DS + str(random.randint(10, 99))
+height3 = str(random.randint(min_height, max_height)) + DS + str(random.randint(10, 99))
+height4 = str(random.randint(min_height, max_height)) + DS + str(random.randint(10, 99))
 
 # Water in tank, this is a variable that needs to be low
-h2o1 = str(random.randint(0, 9)) + "." + str(random.randint(10, 99))
-h2o2 = str(random.randint(0, 9)) + "." + str(random.randint(10, 99))
-h2o3 = str(random.randint(0, 9)) + "." + str(random.randint(10, 99))
-h2o4 = str(random.randint(0, 9)) + "." + str(random.randint(10, 99))
+min_h2o = config.getint('parameters', 'min_h2o')
+max_h2o = config.getint('parameters', 'max_h2o')
+h2o1 = str(random.randint(min_h2o, max_h2o)) + DS + str(random.randint(10, 99))
+h2o2 = str(random.randint(min_h2o, max_h2o)) + DS + str(random.randint(10, 99))
+h2o3 = str(random.randint(min_h2o, max_h2o)) + DS + str(random.randint(10, 99))
+h2o4 = str(random.randint(min_h2o, max_h2o)) + DS + str(random.randint(10, 99))
 
 # Temperature of the tank, this will need to be between 50 - 60
-temp1 = str(random.randint(50, 60)) + "." + str(random.randint(10, 99))
-temp2 = str(random.randint(50, 60)) + "." + str(random.randint(10, 99))
-temp3 = str(random.randint(50, 60)) + "." + str(random.randint(10, 99))
-temp4 = str(random.randint(50, 60)) + "." + str(random.randint(10, 99))
+low_temp = config.getint('parameters', 'low_temperature')
+high_temp = config.getint('parameters', 'high_temperature')
+temp1 = str(random.randint(low_temp, high_temp)) + DS + str(random.randint(10, 99))
+temp2 = str(random.randint(low_temp, high_temp)) + DS + str(random.randint(10, 99))
+temp3 = str(random.randint(low_temp, high_temp)) + DS + str(random.randint(10, 99))
+temp4 = str(random.randint(low_temp, high_temp)) + DS + str(random.randint(10, 99))
 
 # List for station name, add more names if you want to have this look less like a honeypot
 # this should include a list of gas station names based on the country of demployement
 station_name = ast.literal_eval(config.get("stations", "list"))
 slength = len(station_name)
 station = station_name[random.randint(0, slength-1)]
-
 
 # This function is to set-up up the message to be sent upon a successful I20100 command being sent
 # The final message is sent with a current date/time stamp inside of the main loop.
