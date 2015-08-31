@@ -14,19 +14,25 @@ import socket
 import select
 import datetime
 import random
+import ConfigParser
+import ast
+
+# Reading configuration information
+config = ConfigParser.ConfigParser()
+config.read('config.ini')
 
 # Set vars for connection information
-TCP_IP = '0.0.0.0'
-TCP_PORT = 10001
-BUFFER_SIZE = 1024
+TCP_IP = config.get('host', 'tcp_ip')
+TCP_PORT = config.getint('host', 'tcp_port')
+BUFFER_SIZE = config.get('host', 'buffer_size')
 NOW = datetime.datetime.utcnow()
 FILLSTART = NOW - datetime.timedelta(minutes=313)
 FILLSTOP = NOW - datetime.timedelta(minutes=303)
-# Default Product names, change based off country needs
-PRODUCT1 = "SUPER".ljust(22)
-PRODUCT2 = "UNLEAD".ljust(22)
-PRODUCT3 = "DIESEL".ljust(22)
-PRODUCT4 = "PREMIUM".ljust(22)
+# Default Product names, changed based on config.ini file
+PRODUCT1 = config.get('products', 'product1').ljust(22)
+PRODUCT2 = config.get('products', 'product2').ljust(22)
+PRODUCT3 = config.get('products', 'product3').ljust(22)
+PRODUCT4 = config.get('products', 'product4').ljust(22)
 
 # Create random Numbers for the volumes
 #
@@ -67,17 +73,10 @@ temp4 = str(random.randint(50, 60)) + "." + str(random.randint(10, 99))
 
 # List for station name, add more names if you want to have this look less like a honeypot
 # this should include a list of gas station names based on the country of demployement
-# ***** CHANGE THESE ******
-station_name = ['EXXON STATION\n    12 Fake St\n    Anytown, MO 12346', 'FUEL COOP',
-                'SHELL STATION', 'AMOCO FULES', 'MOBIL STATION', 'MARATHON GAS',
-                'CHEVRON STATION', 'CITGO FUELS', 'BP FUELS', 'PILOT TRUCK STOP',
-                'FLYING J TRUCK STOP', 'LOVES FUEL STATION', ' SINCLAIR FUEL',
-                'VICTORY OIL', 'CONOCO FUELS', '76 OIL', 'TEXACO STATION', 'PETRO-CANADA',
-                'TOTAL PETROL', 'HEM PETROL', 'ARAL PETROL', 'OBERT 24h', 'AGIP PETROL',
-                'ROMPETROL STATION', 'PETRON STATION', 'STATOIL STATION', 'LUK OIL',
-                'MURPHY OIL', ]
+station_name = ast.literal_eval(config.get("stations", "list"))
 slength = len(station_name)
 station = station_name[random.randint(0, slength-1)]
+
 
 # This function is to set-up up the message to be sent upon a successful I20100 command being sent
 # The final message is sent with a current date/time stamp inside of the main loop.
