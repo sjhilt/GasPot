@@ -44,3 +44,16 @@ list = [
 	'STATOIL STATION',
 	'LUK OIL',
 	'MURPHY OIL', ]
+
+[parameters]
+decimal_separator = .
+low_temperature = 50
+high_temperature = 60
+min_h2o = 0
+max_h2o = 9
+min_height = 25
+max_height = 75
+min_vol = 1000
+max_vol = 9050
+min_ullage = 3000
+max_ullage = 9999
