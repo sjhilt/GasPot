@@ -16,10 +16,26 @@ import datetime
 import random
 import ConfigParser
 import ast
+import argparse
+import os
+import sys
+
+# Argument parsing only takes care of a configuration file to be specified
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', help='specify a configuration file to be read', required=False)
+args = parser.parse_args()
+
+# Determine the configuration file to use
+configuration_file = args.config if args.config else 'config.ini'
+
+# Check if the configuration file actually exists; exit if not.
+if not os.path.isfile(configuration_file):
+    print 'Please specify a configuration file or rename config.ini.dist to config.ini!'
+    sys.exit(1)
 
 # Reading configuration information
 config = ConfigParser.ConfigParser()
-config.read('config.ini')
+config.read(configuration_file)
 
 # Set vars for connection information
 TCP_IP = config.get('host', 'tcp_ip')
