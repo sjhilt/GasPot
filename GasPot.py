@@ -311,7 +311,7 @@ while True:
 
                 if cmd in cmds:
                     target.write(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                        " - %s Command Attempt from: %s\n" % (cmds[cmd], addr[0]))
+                        " - %s Command Attempt from: %s\n" % (cmd, addr[0]))
                     conn.send(cmds[cmd]())
                 elif cmd.startswith("S6020"):
                     # change the tank name
