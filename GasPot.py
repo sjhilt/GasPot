@@ -23,6 +23,7 @@ import sys
 # Argument parsing only takes care of a configuration file to be specified
 parser = argparse.ArgumentParser()
 parser.add_argument('--config', help='specify a configuration file to be read', required=False)
+parser.add_argument('--log', help='specify a path to log to, defaults to STDOUT otherwise', required=False)
 args = parser.parse_args()
 
 # Determine the configuration file to use
@@ -176,18 +177,18 @@ I20300
 ''' + station + '''
 
 
-TANK 1    '''+ PRODUCT1 +'''           
-    TEST STATUS: OFF   
+TANK 1    '''+ PRODUCT1 +'''
+    TEST STATUS: OFF
 LEAK DATA NOT AVAILABLE ON THIS TANK
 
 
-TANK 2    '''+ PRODUCT2 +'''           
-    TEST STATUS: OFF   
+TANK 2    '''+ PRODUCT2 +'''
+    TEST STATUS: OFF
 LEAK DATA NOT AVAILABLE ON THIS TANK
 
 
 TANK 3    '''+ PRODUCT3 +'''
-    TEST STATUS: OFF   
+    TEST STATUS: OFF
 LEAK DATA NOT AVAILABLE ON THIS TANK
 
 
@@ -198,7 +199,7 @@ LEAK DATA NOT AVAILABLE ON THIS TANK
     return I20300_1 + str(TIME.strftime('%m/%d/%Y %H:%M')) + I20300_2
 
 ###########################################################################
-# Shift report command I20400 only one item in report at this time, 
+# Shift report command I20400 only one item in report at this time,
 # but can always add more if needed
 ###########################################################################
 def I20400():
@@ -210,15 +211,15 @@ I20400
 ''' + station + '''
 
 
- SHIFT REPORT 
+ SHIFT REPORT
 
-SHIFT 1 TIME: 12:00 AM        
+SHIFT 1 TIME: 12:00 AM
 
 TANK PRODUCT
 
   1  '''+ PRODUCT1 +'''                  VOLUME TC VOLUME  ULLAGE  HEIGHT  WATER   TEMP
 SHIFT  1 STARTING VALUES      ''' + str(Vol1) +'''     '''+ str(vol1tc) +'''    '''+ ullage1 +'''   '''+ height1 +'''   '''+ h2o1 +'''    '''+ temp1 +'''
-         ENDING VALUES        ''' + str(Vol1 + 940) +'''     '''+ str(vol1tc + 886) +'''    '''+ str(int(ullage1) + 345) +'''   '''+ str(float(height1) + 53)+'''  '''+ h2o1 +'''    '''+ temp1 +''' 
+         ENDING VALUES        ''' + str(Vol1 + 940) +'''     '''+ str(vol1tc + 886) +'''    '''+ str(int(ullage1) + 345) +'''   '''+ str(float(height1) + 53)+'''  '''+ h2o1 +'''    '''+ temp1 +'''
          DELIVERY VALUE          0
          TOTALS                940
 
@@ -241,8 +242,8 @@ TANK   PRODUCT                 STATUS
 
   1    '''+ PRODUCT1 +'''                   NORMAL
 
-  2    '''+ PRODUCT2 +'''                  HIGH WATER ALARM   
-                               HIGH WATER WARNING 
+  2    '''+ PRODUCT2 +'''                  HIGH WATER ALARM
+                               HIGH WATER WARNING
 
   3    '''+ PRODUCT3 +'''                  NORMAL
 
@@ -275,8 +276,7 @@ while True:
             try:
                 # get current time in UTC
                 TIME = datetime.datetime.utcnow()
-                # open log file for recording messages
-                target = open("all_attempts.log", 'a')
+                target = open(args.log, 'a') if args.log else sys.stdout
                 # write out initial connection
                 target.write(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
                     "- Connection from : %s\n" % addr[0])
@@ -287,7 +287,7 @@ while True:
                     active_sockets.remove(conn)
                     conn.close()
                     continue
-                
+
                 while not ('\n' in response or '00' in response):
                     response += conn.recv(4096)
                 # if first value is not ^A then do nothing
@@ -321,7 +321,7 @@ while True:
                         # if length is less than two, print error
                         if len(TEMP) < 2:
                             conn.send("9999FF1B\n")
-                        # Else the command was entered correctly and continue 
+                        # Else the command was entered correctly and continue
                         else:
                             # Strip off the carrage returns and new lines
                             TEMP1 = TEMP[1].rstrip("\r\n")
@@ -335,7 +335,7 @@ while True:
                             else:
                                 # else it fits fine (22 chars)
                                 PRODUCT1 = TEMP1
-                        #log result 
+                        #log result
                         target.write(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
                             " - S60201: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0])
                     # Follows format for S60201 for comments
