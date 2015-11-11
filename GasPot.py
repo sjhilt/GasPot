@@ -254,8 +254,10 @@ TANK   PRODUCT                 STATUS
     return I20500_1 + str(TIME.strftime('%m/%d/%Y %H:%M')) + I20500_2
 
 def log(mesg, destinations):
+  now = datetime.datetime.utcnow()
+  prefix = now.strftime('%m/%d/%Y %H:%M') + ': '
   for destination in destinations:
-    destination.write(mesg)
+    destination.write(prefix + mesg)
 
 log_destinations = [ open(args.log, 'a') ]
 if not args.quiet:
@@ -286,8 +288,7 @@ while True:
                 # get current time in UTC
                 TIME = datetime.datetime.utcnow()
                 # write out initial connection
-                log(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                    "- Connection from : %s\n" % addr[0], log_destinations)
+                log("Connection from : %s\n" % addr[0], log_destinations)
                 # Get the initial data
                 response = conn.recv(4096)
                 # The connection has been closed
@@ -301,15 +302,13 @@ while True:
                 # if first value is not ^A then do nothing
                 # thanks John(achillean) for the help
                 if response[0] != '\x01':
-                    log(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                        " - Non ^A Command Attempt from: %s\n" % addr[0], log_destinations)
+                    log("Non ^A Command Attempt from: %s\n" % addr[0], log_destinations)
                     conn.close()
                     active_sockets.remove(conn)
                     continue
                 # if response is less than 6, than do nothing
                 if len(response) < 6:
-                    log(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                        " - Non Valid Command Attempt from: %s\n" % addr[0], log_destinations)
+                    log("Invalid Command Attempt from: %s\n" % addr[0], log_destinations)
                     conn.close()
                     active_sockets.remove(conn)
                     continue
@@ -318,8 +317,7 @@ while True:
                 cmd = response[1:7] # strip ^A and \n out
 
                 if cmd in cmds:
-                    log(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                        " - %s Command Attempt from: %s\n" % (cmd, addr[0]), log_destinations)
+                    log("Handling %s Command Attempt from: %s\n" % (cmd, addr[0]), log_destinations)
                     conn.send(cmds[cmd]())
                 elif cmd.startswith("S6020"):
                     # change the tank name
@@ -344,8 +342,7 @@ while True:
                                 # else it fits fine (22 chars)
                                 PRODUCT1 = TEMP1
                         #log result
-                        log(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                            " - S60201: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
+                        log("S60201: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
                     # Follows format for S60201 for comments
                     elif cmd.startswith("S60202"):
                         TEMP = response.split('S60202')
@@ -359,8 +356,7 @@ while True:
                                 PRODUCT2 = TEMP1[:20] + "  "
                             else:
                                 PRODUCT2 = TEMP1
-                        log(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                            " - S60202: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
+                        log("S60202: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
                     # Follows format for S60201 for comments
                     elif cmd.startswith("S60203"):
                         TEMP = response.split('S60203')
@@ -374,8 +370,7 @@ while True:
                                 PRODUCT3 = TEMP1[:20] + "  "
                             else:
                                 PRODUCT3 = TEMP1
-                        log(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                            " - S60203: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
+                        log("S60203: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
                     # Follows format for S60201 for comments
                     elif cmd.startswith("S60204"):
                         TEMP = response.split('S60204')
@@ -389,8 +384,7 @@ while True:
                                 PRODUCT4 = TEMP1[:20] + "  "
                             else:
                                 PRODUCT4 = TEMP1
-                        log(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                            " - S60204: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
+                        log("S60204: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
                     # Follows format for S60201 for comments
                     elif cmd.startswith("S60200"):
                         TEMP = response.split('S60200')
@@ -415,8 +409,7 @@ while True:
                                 PRODUCT2 = TEMP1
                                 PRODUCT3 = TEMP1
                                 PRODUCT4 = TEMP1
-                        log(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                            " - S60200: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], destinations)
+                        log("S60200: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], destinations)
                     else:
                         conn.send("9999FF1B\n")
                 # Else it is a currently unsupported command so print the error message found in the manual
@@ -424,9 +417,8 @@ while True:
                 else:
                     conn.send("9999FF1B\n")
                     # log what was entered
-                    log(str(datetime.datetime.utcnow().strftime('%m/%d/%Y %H:%M')) + \
-                        " - Attempt from: %s\n" % addr[0], log_destinations)
-                    log("       Command Entered %s\n" % response, log_destinations)
+                    log("Attempt from: %s\n" % addr[0], log_destinations)
+                    log("Command Entered %s\n" % response, log_destinations)
             except Exception, e:
                 print 'Unknown Error: {}'.format(str(e))
                 raise
