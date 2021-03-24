@@ -5,6 +5,8 @@
 # system. This will record the connection, and if any attempts are made.
 # This is a basic attempt, with lots of room for improvement.
 #
+# 03/24/21 - Changed to Python3 (finally)
+#
 #   Authors: Kyle Wilhoit
 #            Stephen Hilt
 #
@@ -14,7 +16,7 @@ import socket
 import select
 import datetime
 import random
-import ConfigParser
+import configparser
 import ast
 import argparse
 import os
@@ -33,11 +35,11 @@ configuration_file = args.config if args.config else 'config.ini'
 
 # Check if the configuration file actually exists; exit if not.
 if not os.path.isfile(configuration_file):
-    print 'Please specify a configuration file or rename config.ini.dist to config.ini!'
+    print('Please specify a configuration file or rename config.ini.dist to config.ini!')
     sys.exit(1)
 
 # Reading configuration information
-config = ConfigParser.ConfigParser()
+config = configparser.ConfigParser()
 config.read(configuration_file)
 
 # Set vars for connection information
@@ -419,8 +421,8 @@ while True:
                     # log what was entered
                     log("Attempt from: %s\n" % addr[0], log_destinations)
                     log("Command Entered %s\n" % response, log_destinations)
-            except Exception, e:
-                print 'Unknown Error: {}'.format(str(e))
+            except Exception as e:
+                print('Unknown Error: {}'.format(str(e)))
                 raise
             except KeyboardInterrupt:
                 conn.close()
