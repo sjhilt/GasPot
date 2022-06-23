@@ -299,11 +299,11 @@ while True:
                     conn.close()
                     continue
 
-                while not ('\n' in response or '00' in response):
+                while not (b'\n' in response or b'00' in response):
                     response += conn.recv(4096)
                 # if first value is not ^A then do nothing
                 # thanks John(achillean) for the help
-                if response[0] != '\x01':
+                if response[0] != b'\x01':
                     log("Non ^A Command Attempt from: %s\n" % addr[0], log_destinations)
                     conn.close()
                     active_sockets.remove(conn)
