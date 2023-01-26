@@ -298,41 +298,42 @@ while True:
                     active_sockets.remove(conn)
                     conn.close()
                     continue
-
                 while not (b'\n' in response or b'00' in response):
                     response += conn.recv(4096)
                 # if first value is not ^A then do nothing
                 # thanks John(achillean) for the help
-                if response[0] != b'\x01':
+                if response[0:2] == b"^A":
+                    cmd = response.decode(errors='replace')[2:8] # strip ^A and \n out
+                elif response[0:1] == b"\x01":
+                    cmd = response.decode(errors='replace')[1:7]
+                else:
                     log("Non ^A Command Attempt from: %s\n" % addr[0], log_destinations)
                     conn.close()
                     active_sockets.remove(conn)
                     continue
                 # if response is less than 6, than do nothing
-                if len(response) < 6:
+                if len(response.decode(errors='replace')) < 6:
                     log("Invalid Command Attempt from: %s\n" % addr[0], log_destinations)
                     conn.close()
                     active_sockets.remove(conn)
                     continue
 
                 cmds = {"I20100" : I20100, "I20200" : I20200, "I20300" : I20300 , "I20400" : I20400, "I20500" : I20500}
-                cmd = response[1:7] # strip ^A and \n out
-
                 if cmd in cmds:
                     log("Handling %s Command Attempt from: %s\n" % (cmd, addr[0]), log_destinations)
-                    conn.send(cmds[cmd]())
+                    conn.send(cmds[cmd]().encode(errors='replace'))
                 elif cmd.startswith("S6020"):
                     # change the tank name
                     if cmd.startswith("S60201"):
                         # split string into two, the command, and the data
-                        TEMP = response.split('S60201')
+                        TEMP = response.split('S60201'.encode(errors='replace'))
                         # if length is less than two, print error
                         if len(TEMP) < 2:
-                            conn.send("9999FF1B\n")
+                            conn.send("9999FF1B\n".encode(errors='replace'))
                         # Else the command was entered correctly and continue
                         else:
                             # Strip off the carrage returns and new lines
-                            TEMP1 = TEMP[1].rstrip("\r\n")
+                            TEMP1 = TEMP[1].rstrip("\r\n".encode(errors='replace')).decode(errors='replace')
                             # if Length is less than 22
                             if len(TEMP1) < 22:
                                 # pad the result to have 22 chars
@@ -347,11 +348,11 @@ while True:
                         log("S60201: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
                     # Follows format for S60201 for comments
                     elif cmd.startswith("S60202"):
-                        TEMP = response.split('S60202')
+                        TEMP = response.split('S60202'.encode(errors='replace'))
                         if len(TEMP) < 2:
-                            conn.send("9999FF1B\n")
+                            conn.send("9999FF1B\n".encode(errors='replace'))
                         else:
-                            TEMP1 = TEMP[1].rstrip("\r\n")
+                            TEMP1 = TEMP[1].rstrip("\r\n".encode(errors='replace')).decode(errors='replace')
                             if len(TEMP1) < 22:
                                 PRODUCT2 = TEMP1.ljust(22)
                             elif len(TEMP1) > 22:
@@ -361,11 +362,11 @@ while True:
                         log("S60202: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
                     # Follows format for S60201 for comments
                     elif cmd.startswith("S60203"):
-                        TEMP = response.split('S60203')
+                        TEMP = response.split('S60203'.encode(errors='replace'))
                         if len(TEMP) < 2:
-                            conn.send("9999FF1B\n")
+                            conn.send("9999FF1B\n".encode(errors='replace'))
                         else:
-                            TEMP1 = TEMP[1].rstrip("\r\n")
+                            TEMP1 = TEMP[1].rstrip("\r\n".encode(errors='replace')).decode(errors='replace')
                             if len(TEMP1) < 22:
                                 PRODUCT3 = TEMP1.ljust(22)
                             elif len(TEMP1) > 22:
@@ -375,11 +376,11 @@ while True:
                         log("S60203: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
                     # Follows format for S60201 for comments
                     elif cmd.startswith("S60204"):
-                        TEMP = response.split('S60204')
+                        TEMP = response.split('S60204'.encode(errors='replace'))
                         if len(TEMP) < 2:
-                            conn.send("9999FF1B\n")
+                            conn.send("9999FF1B\n".encode(errors='replace'))
                         else:
-                            TEMP1 = TEMP[1].rstrip("\r\n")
+                            TEMP1 = TEMP[1].rstrip("\r\n".encode(errors='replace')).decode(errors='replace')
                             if len(TEMP1) < 22:
                                 PRODUCT4 = TEMP1.ljust(22)
                             elif len(TEMP1) > 22:
@@ -389,13 +390,13 @@ while True:
                         log("S60204: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
                     # Follows format for S60201 for comments
                     elif cmd.startswith("S60200"):
-                        TEMP = response.split('S60200')
+                        TEMP = response.split('S60200'.encode(errors='replace'))
                         if len(TEMP) < 2:
                             # 9999 indicates that the command was not understood and
                             # FF1B is the checksum for the 9999
-                            conn.send("9999FF1B\n")
+                            conn.send("9999FF1B\n".encode(errors='replace'))
                         else:
-                            TEMP1 = TEMP[1].rstrip("\r\n")
+                            TEMP1 = TEMP[1].rstrip("\r\n".encode(errors='replace')).decode(errors='replace')
                             if len(TEMP1) < 22:
                                 PRODUCT1 = TEMP1.ljust(22)
                                 PRODUCT2 = TEMP1.ljust(22)
@@ -411,13 +412,13 @@ while True:
                                 PRODUCT2 = TEMP1
                                 PRODUCT3 = TEMP1
                                 PRODUCT4 = TEMP1
-                        log("S60200: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], destinations)
+                        log("S60200: "+ TEMP1 +" Command Attempt from: %s\n" % addr[0], log_destinations)
                     else:
-                        conn.send("9999FF1B\n")
+                        conn.send("9999FF1B\n".encode(errors='replace'))
                 # Else it is a currently unsupported command so print the error message found in the manual
                 # 9999 indicates that the command was not understood and FF1B is the checksum for the 9999
                 else:
-                    conn.send("9999FF1B\n")
+                    conn.send("9999FF1B\n".encode(errors='replace'))
                     # log what was entered
                     log("Attempt from: %s\n" % addr[0], log_destinations)
                     log("Command Entered %s\n" % response, log_destinations)
