@@ -5,7 +5,7 @@
 </p>
 
 
-GasPot is a honeypot that has been designed to simulate a Veeder Root Gaurdian AST. These Tank Gauges are common in the oil and gas industry for Gas Station tanks to help with Inventory of fuels. GasPot was designed to randomize as much as possible so no two instances look exactly the same. 
+GasPot is a honeypot that has been designed to simulate a Veeder Root Gaurdian AST. These Tank Gauges are common in the oil and gas industry for Gas Station tanks to help with Inventory of fuels. GasPot was designed to randomize as much as possible so no two instances look identical. 
 
 ## Install
 		
@@ -13,6 +13,7 @@ GasPot is a honeypot that has been designed to simulate a Veeder Root Gaurdian A
 	
 
 ## Configure
+
 GasPot will run as downloaded above with no modifications. Configuration is based on a config.ini file. To make sure that GasPot looks like no other GasPot system on the internet and to collect the best information you can change the products and stations in the configuration file. 
 
 1) Change the station names to match gas stations in the region of deployment of GasPot.
