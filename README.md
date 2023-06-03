@@ -22,7 +22,7 @@ GasPot will run as downloaded above with no modifications. Configuration is base
 
 ## Run GasPot
 		
-	python GasPot.py
+	python3 GasPot.py
 	
 ## Review Logs
 All connections will be logged locally to the all_attempts.log file created in the directory that GasPot is ran from. 
