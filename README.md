@@ -29,3 +29,7 @@ All connections will be logged locally to the all_attempts.log file created in t
 ## Write up
 
 http://www.trendmicro.com/vinfo/us/security/news/cybercrime-and-digital-threats/the-gaspot-experiment
+
+## Future Development Roadmap
+
+![image](https://github.com/RoseSecurity/GasPot/assets/72598486/49da6c46-606f-4213-9e0a-17e180da083f)
