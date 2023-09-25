@@ -30,3 +30,10 @@ All connections will be logged locally to the all_attempts.log file created in t
 ## Write up
 
 http://www.trendmicro.com/vinfo/us/security/news/cybercrime-and-digital-threats/the-gaspot-experiment
+
+
+## Stargazers over time
+
+[![Stargazers over time](https://starchart.cc/sjhilt/GasPot.svg)](https://starchart.cc/sjhilt/GasPot)
+
+
