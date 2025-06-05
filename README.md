@@ -1,16 +1,10 @@
 # GasPot
 
-<p align="center">
-<img src="https://github.com/RoseSecurity/GasPot/assets/72598486/bcecc38d-1258-4681-a94c-810e9715c328" width=50% height=50%>
-</p>
+## UPDATED VERSION
+
+This honeypot is an adapted vestion of GasPot developed by sjhilt. Changes include more granular time stamps and fixing the bug where access logs are not written to a file when running the software in docker due to buffers not being written to the log file.
 
 GasPot is a honeypot that has been designed to simulate a Veeder Root Gaurdian AST. These Tank Gauges are common in the oil and gas industry for Gas Station tanks to help with Inventory of fuels. GasPot was designed to randomize as much as possible so no two instances look identical. 
-
-## Install
-
-```
-git clone https://github.com/sjhilt/GasPot.git
-```
 
 ## Configure
 
@@ -33,25 +27,21 @@ All connections will be logged locally to the all_attempts.log file created in t
 
 ## Docker Install
 
-Download the Docker image from the registry.
+It would be reccomended to run GasPot within docker. To do this, you need to run the command below:
+
+`docker-compose up --build -d`
+
+NOTE: Before you do this, you need to run the following commands on your local system to make the required user, group and directory for log persistence.
 
 ```
-docker pull rosesecurity/gaspot:v0.1.0
-```
-
-Create the container.
-
-```
-docker run --name gaspot -p 10001:10001 rosesecurity/gaspot:v0.1.0
+addgroup --gid 10001 --system veeder
+adduser --uid 10000 --system --ingroup veeder --home /home/veeder veeder
+mkdir -p /data/logs/GasPot/
+touch /data/logs/GasPot/all_attempts.log
 ```
 
 ## Write up
 
+Below is the write up of the original GasPot version developed at BlackHat 2015.
+
 http://www.trendmicro.com/vinfo/us/security/news/cybercrime-and-digital-threats/the-gaspot-experiment
-
-
-## Stargazers over time
-
-[![Stargazers over time](https://starchart.cc/sjhilt/GasPot.svg)](https://starchart.cc/sjhilt/GasPot)
-
-

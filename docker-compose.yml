@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  gaspot:
+    # image: custom_gaspot
+    build: ./
+    container_name: custom_gaspot
+    ports:
+      - "10001:10001"
+    volumes:
+      - /data/logs/GasPot/all_attempts.log:/veeder/all_attempts.log # REMEMBER: You must create this file on your local system first.
+    restart: always

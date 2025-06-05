@@ -9,8 +9,10 @@ RUN addgroup --gid 10001 --system veeder \
 # Set the working directory inside the container
 WORKDIR /veeder
 
+RUN mkdir logs
+
 # Create a log directory and set permissions
-RUN chown veeder:veeder /veeder
+RUN chown -R veeder:veeder /veeder
 
 # Expose the port on which GasPot will listen
 EXPOSE 10001
