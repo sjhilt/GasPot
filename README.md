@@ -198,6 +198,12 @@ GasPot.py
 
 ---
 
+## Stargazers over time
+
+[![Stargazers over time](https://starchart.cc/sjhilt/GasPot.svg)](https://starchart.cc/sjhilt/GasPot)
+
+---
+
 ## License
 
 [CC0 1.0 Universal](LICENSE.md) — public domain.
