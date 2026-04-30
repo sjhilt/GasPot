@@ -100,6 +100,123 @@ echo -ne '\x01I20100\n' | nc localhost 10001
 
 ---
 
+## Example Output
+
+Here's what the responses look like when you send commands to GasPot. These are the same formats a real Veeder-Root TLS system would return.
+
+### I20100 — In-Tank Inventory (most commonly probed)
+
+```
+I20100
+04/30/2026 15:10
+
+    SHELL STATION
+
+
+IN-TANK INVENTORY
+
+TANK PRODUCT             VOLUME TC VOLUME   ULLAGE   HEIGHT    WATER     TEMP
+  1  SUPER                   1906        1916      4110    33.99      0.14    52.53
+  2  UNLEAD                  1406        1415      3106    33.57      0.38    50.80
+  3  DIESEL                   716         720      1958    20.05      0.55    52.21
+  4  PREMIUM                 4412        4430      3108    54.56      0.40    54.15
+```
+
+### I10100 — System Status
+
+```
+I10100
+04/30/2026 15:10
+
+    SHELL STATION
+
+
+SYSTEM STATUS REPORT
+
+       SERIAL# : 0000112233
+  SOFTWARE VER : V364.200
+
+  POWER STATUS : AC ON
+  BATTERY      : OK
+  PRINTER      : ACTIVE
+
+  COMM 1       : ENABLED  IDLE
+  COMM 2       : DISABLED
+```
+
+### I50100 — Date/Time Query
+
+```
+I50100
+04/30/2026 15:10
+
+    SHELL STATION
+
+
+  DATE: 04/30/2026
+  TIME: 15:10:04
+  DAY : THURSDAY
+```
+
+### I11100 — Priority Alarm History
+
+```
+I11100
+04/30/2026 15:10
+    SHELL STATION
+
+
+
+PRIORITY ALARM HISTORY
+
+ID  CATEGORY  DESCRIPTION          ALARM TYPE           STATE    DATE    TIME
+    SYSTEM                         BATTERY IS OFF       CLEAR   4-30-26  9:25AM
+    SYSTEM                         BATTERY IS OFF       ALARM   4-30-26  9:10AM
+```
+
+### I20200 — Delivery Report
+
+```
+I20200
+04/30/2026 15:10
+
+
+    SHELL STATION
+
+
+DELIVERY REPORT
+
+T 1:SUPER
+INCREASE   DATE / TIME             GALLONS TC GALLONS WATER  TEMP DEG F  HEIGHT
+
+      END: 04/30/2026 08:29         1906       1916   0.11      52.32   33.99
+    START: 04/30/2026 08:19         602        605    0.13      52.53   15.02
+   AMOUNT:                          1304       1311
+```
+
+### I20500 — In-Tank Status
+
+```
+I20500
+04/30/2026 15:10
+
+
+    SHELL STATION
+
+
+TANK   PRODUCT                 STATUS
+
+  1    SUPER                                    NORMAL
+
+  2    UNLEAD                                   NORMAL
+
+  3    DIESEL                                   NORMAL
+
+  4    PREMIUM                                  NORMAL
+```
+
+---
+
 ## Command-Line Options
 
 ```
