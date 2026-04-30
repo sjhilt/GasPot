@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""
-GasPot -- Veeder-Root TLS Guardian AST Honeypot
-
-A honeypot that emulates a Veeder-Root TLS-350/TLS-450 Automatic Tank Gauge
-(ATG) controller. Records all connection attempts and commands for threat
-intelligence collection. Supports the most commonly probed TLS serial
-commands as well as many that real attackers and researchers use.
-
-Original Authors: Kyle Wilhoit, Stephen Hilt
-Modernised:       2026 -- refactored for Python 3.10+, proper logging,
-                  JSON output, additional Veeder-Root commands, and
-                  physically realistic tank value generation.
-
-License: CC0 1.0 Universal (public domain)
-"""
+#######################################################################
+# GasPot.py
+#
+# Honeypot that simulates a Veeder-Root Guardian AST (TLS-350/TLS-450).
+# Records connections and commands for threat intel.
+#
+# v2 rewrite -- cleaned up for Python 3.10+, added a bunch more
+# Veeder-Root commands, better logging, and the tank values are now
+# based on actual cylinder geometry so they look realistic.
+#
+#   Authors: Kyle Wilhoit
+#            Stephen Hilt
+#
+########################################################################
 
 from __future__ import annotations
 
@@ -35,20 +34,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-# -- Version -----------------------------------------------------------------
 __version__ = "2.2.0"
 
-# -- Constants for tank geometry ---------------------------------------------
+# Tank geometry constants -- used to make the values look real
 THERMAL_COEFF = 0.000700  # per degree F, standard petroleum
-REFERENCE_TEMP = 60.0     # API standard temperature for TC volume
+REFERENCE_TEMP = 60.0     # API standard temp for TC volume correction
 
-# -- Logging Setup -----------------------------------------------------------
+# Logging setup
 
 logger = logging.getLogger("gaspot")
 
 
 def _setup_logging(log_path: str, quiet: bool, json_log: bool) -> None:
-    """Configure dual-destination logging (file + optional stdout)."""
+    # Set up logging to file and optionally to console
     logger.setLevel(logging.DEBUG)
     fmt_text = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(message)s",
@@ -75,7 +73,7 @@ def _setup_logging(log_path: str, quiet: bool, json_log: bool) -> None:
 
 
 class _JsonFormatter(logging.Formatter):
-    """Emit each log record as a single JSON line (for SIEM ingest)."""
+    # Formats log entries as JSON lines -- makes it easy to pipe into Splunk/ELK/etc
 
     def format(self, record: logging.LogRecord) -> str:
         obj = {
@@ -90,20 +88,16 @@ class _JsonFormatter(logging.Formatter):
         return json.dumps(obj, default=str)
 
 
-# -- Tank Geometry Helpers ---------------------------------------------------
+# Tank geometry math
 #
-# Real tanks are horizontal cylinders.  Given diameter and length we can
-# compute volume from product height using the standard cross-section
-# formula.  This ensures height <-> volume <-> ullage are all consistent.
-# --------------------------------------------------------------------------
+# Real tanks are horizontal cylinders so we use the cross-section area
+# formula to get volume from height. This way height/volume/ullage are
+# all consistent with each other instead of just random numbers.
 
 
 def _cylinder_volume_from_height(diameter_in: float, length_in: float, height_in: float) -> float:
-    """
-    Volume (gallons) of liquid in a horizontal cylinder given product height.
-    diameter_in / length_in in inches, height_in = product level in inches.
-    Returns gallons (1 cubic inch = 0.004329 gallons).
-    """
+    # Calculate gallons of liquid in a horizontal cylinder from the product height
+    # All measurements in inches, returns gallons (1 cubic inch = 0.004329 gal)
     r = diameter_in / 2.0
     h = max(0.0, min(height_in, diameter_in))  # clamp
     # Cross-sectional area of a circular segment
@@ -113,10 +107,8 @@ def _cylinder_volume_from_height(diameter_in: float, length_in: float, height_in
 
 
 def _height_from_fill_fraction(diameter_in: float, fill_fraction: float) -> float:
-    """
-    Approximate product height for a given fill fraction (0.0-1.0) in a
-    horizontal cylinder.  Uses Newton's method on the segment area formula.
-    """
+    # Given a fill percentage (0.0-1.0) figure out the height in inches
+    # Uses Newton's method to solve the circle segment area equation
     r = diameter_in / 2.0
     target_area = fill_fraction * math.pi * r * r  # target cross-section area
 
@@ -142,12 +134,12 @@ def _height_from_fill_fraction(diameter_in: float, fill_fraction: float) -> floa
     return round(h, 2)
 
 
-# -- Data Model --------------------------------------------------------------
-
+# Data model for the station and tanks
 
 @dataclass
 class Tank:
-    """State for a single fuel tank with physically consistent values."""
+    # Represents a single fuel tank -- all the values are derived from
+    # fill_fraction and the physical dimensions so everything stays consistent
 
     number: int
     product: str
@@ -173,41 +165,41 @@ class Tank:
 
     @property
     def capacity(self) -> int:
-        """Total tank capacity in gallons."""
+        # Total tank capacity in gallons
         return round(_cylinder_volume_from_height(self.diameter, self.length, self.diameter))
 
     @property
     def temperature(self) -> float:
-        """Temperature with slight drift per query (simulates real sensor)."""
+        # Add a tiny bit of drift each time so it looks like a real sensor reading
         drift = random.uniform(-0.15, 0.15)
         return round(self.base_temperature + drift, 2)
 
     @property
     def water(self) -> float:
-        """Water level with slight drift."""
+        # Water level with a little drift
         drift = random.uniform(-0.02, 0.02)
         return round(max(0.0, self.base_water_inches + drift), 2)
 
     @property
     def height(self) -> float:
-        """Product height in inches, derived from fill fraction and geometry."""
+        # Product height in inches based on how full the tank is
         return _height_from_fill_fraction(self.diameter, self.fill_fraction)
 
     @property
     def volume(self) -> int:
-        """Current volume in gallons, derived from geometry."""
+        # Current volume in gallons
         return round(_cylinder_volume_from_height(self.diameter, self.length, self.height))
 
     @property
     def tc_volume(self) -> int:
-        """Temperature-compensated volume using API thermal coefficient."""
+        # Temperature-compensated volume -- this is what the real systems report
         temp = self.temperature
         correction = 1.0 + THERMAL_COEFF * (REFERENCE_TEMP - temp)
         return round(self.volume * correction)
 
     @property
     def ullage(self) -> int:
-        """Remaining capacity = total - current volume."""
+        # Remaining capacity (how much more fuel can fit)
         return max(0, self.capacity - self.volume)
 
     def fmt_temp(self) -> str:
@@ -222,7 +214,7 @@ class Tank:
 
 @dataclass
 class StationState:
-    """Mutable state representing the entire simulated station."""
+    # State for the whole station -- name, tanks, serial number, etc.
 
     name: str
     tanks: list[Tank] = field(default_factory=list)
@@ -240,7 +232,8 @@ class StationState:
 
 
 def build_station(config: configparser.ConfigParser) -> StationState:
-    """Construct a StationState from the parsed config file."""
+    # Build the station from the config file -- randomize everything so
+    # no two instances look the same
     low_temp = config.getint("parameters", "low_temperature")
     high_temp = config.getint("parameters", "high_temperature")
     min_h2o = config.getint("parameters", "min_h2o")
@@ -292,19 +285,18 @@ def build_station(config: configparser.ConfigParser) -> StationState:
     return StationState(name=station_name, tanks=tanks)
 
 
-# -- Veeder-Root TLS Command Handlers ----------------------------------------
+# Veeder-Root TLS command handlers
 #
-# Each handler receives (station, raw_payload) and returns the
-# ASCII response string.  The command registry at the bottom maps
-# command codes -> handler functions.
-# ----------------------------------------------------------------------------
+# Each function handles one command code. They take the station state
+# and any extra payload data, return the response string. The command
+# registry dict at the bottom maps codes to functions.
 
 def _ts(station: StationState) -> str:
-    """Return formatted timestamp."""
+    # formatted timestamp for response headers
     return station.now.strftime("%m/%d/%Y %H:%M")
 
 
-# -- I101xx  System Status Report --------------------------------------------
+# I101xx -- System Status Report
 
 def cmd_I10100(station: StationState, _payload: str) -> str:
     lines = [
@@ -331,7 +323,7 @@ def cmd_I10100(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I102xx  System Configuration --------------------------------------------
+# I102xx -- System Configuration
 
 def cmd_I10200(station: StationState, _payload: str) -> str:
     lines = [
@@ -357,16 +349,11 @@ def cmd_I10200(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I111xx  Priority Alarm History Report -----------------------------------
-#
-# Per Veeder-Root manual 576013-635 (Function Code 111, Version 2):
-# This is the Priority Alarm History Report, showing recent alarm events
-# with category, description, type, state, date/time.  Commonly probed
-# by scanners looking for alarm state information.
-# --------------------------------------------------------------------------
+# I111xx -- Priority Alarm History Report
+# (Function Code 111 per Veeder-Root manual 576013-635)
+# Shows recent alarm events. Scanners probe this a lot.
 
 def cmd_I11100(station: StationState, _payload: str) -> str:
-    """Priority Alarm History — per spec function code 111."""
     alarm_time = (station.now - datetime.timedelta(hours=6)).strftime("%-m-%d-%y  %-I:%M%p")
     clear_time = (station.now - datetime.timedelta(hours=5, minutes=45)).strftime("%-m-%d-%y  %-I:%M%p")
     lines = [
@@ -387,7 +374,7 @@ def cmd_I11100(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I201xx  In-Tank Inventory Report ----------------------------------------
+# I201xx -- In-Tank Inventory (this is the most commonly probed command)
 
 def cmd_I20100(station: StationState, _payload: str) -> str:
     lines = [
@@ -413,7 +400,7 @@ def cmd_I20100(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I202xx  Delivery Report -------------------------------------------------
+# I202xx -- Delivery Report
 
 def cmd_I20200(station: StationState, _payload: str) -> str:
     t = station.tanks[0]
@@ -451,7 +438,7 @@ def cmd_I20200(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I203xx  In-Tank Leak Detect Report --------------------------------------
+# I203xx -- Leak Detect Report
 
 def cmd_I20300(station: StationState, _payload: str) -> str:
     lines = [
@@ -474,7 +461,7 @@ def cmd_I20300(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I204xx  Shift Report -----------------------------------------------------
+# I204xx -- Shift Report
 
 def cmd_I20400(station: StationState, _payload: str) -> str:
     t = station.tanks[0]
@@ -514,7 +501,7 @@ def cmd_I20400(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I205xx  In-Tank Status Report --------------------------------------------
+# I205xx -- In-Tank Status
 
 def cmd_I20500(station: StationState, _payload: str) -> str:
     lines = [
@@ -548,7 +535,7 @@ def cmd_I20500(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I206xx  In-Tank Alarm History -------------------------------------------
+# I206xx -- In-Tank Alarm History
 
 def cmd_I20600(station: StationState, _payload: str) -> str:
     alarm_time = (station.now - datetime.timedelta(hours=3)).strftime("%m/%d/%Y %H:%M")
@@ -586,7 +573,7 @@ def cmd_I20600(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I207xx  In-Tank Diagnostic Report ----------------------------------------
+# I207xx -- Diagnostics Report
 
 def cmd_I20700(station: StationState, _payload: str) -> str:
     lines = [
@@ -613,7 +600,7 @@ def cmd_I20700(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I208xx  Tank Test Results ------------------------------------------------
+# I208xx -- Tank Test Results
 
 def cmd_I20800(station: StationState, _payload: str) -> str:
     test_time = (station.now - datetime.timedelta(days=1)).strftime("%m/%d/%Y %H:%M")
@@ -641,7 +628,7 @@ def cmd_I20800(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I209xx  Tank Tightness Test Report ----------------------------------------
+# I209xx -- Tank Tightness Test
 
 def cmd_I20900(station: StationState, _payload: str) -> str:
     test_time = (station.now - datetime.timedelta(days=7)).strftime("%m/%d/%Y %H:%M")
@@ -670,7 +657,7 @@ def cmd_I20900(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I214xx  In-Tank Overfill/High Product Alarm History ----------------------
+# I214xx -- Overfill/High Product Alarm History
 
 def cmd_I21400(station: StationState, _payload: str) -> str:
     alarm_time = (station.now - datetime.timedelta(days=2, hours=5)).strftime("%m/%d/%Y %H:%M")
@@ -707,7 +694,7 @@ def cmd_I21400(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I251xx  Line Leak Test Results -------------------------------------------
+# I251xx -- Line Leak Test Results
 
 def cmd_I25100(station: StationState, _payload: str) -> str:
     test_time = (station.now - datetime.timedelta(hours=6)).strftime("%m/%d/%Y %H:%M")
@@ -734,7 +721,7 @@ def cmd_I25100(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I301xx  Sensor Status Report --------------------------------------------
+# I301xx -- Sensor Status
 
 def cmd_I30100(station: StationState, _payload: str) -> str:
     lines = [
@@ -759,7 +746,7 @@ def cmd_I30100(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I302xx  Sensor Alarm History --------------------------------------------
+# I302xx -- Sensor Alarm History
 
 def cmd_I30200(station: StationState, _payload: str) -> str:
     lines = [
@@ -778,10 +765,9 @@ def cmd_I30200(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I501xx  Date/Time Query -------------------------------------------------
+# I501xx -- Date/Time Query (recon scanners love this one)
 
 def cmd_I50100(station: StationState, _payload: str) -> str:
-    """Read current date/time -- commonly used in recon scanning."""
     lines = [
         "",
         "I50100",
@@ -798,7 +784,7 @@ def cmd_I50100(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I601xx  Tank Configuration Data -----------------------------------------
+# I601xx -- Tank Configuration Data
 
 def cmd_I60100(station: StationState, _payload: str) -> str:
     lines = [
@@ -832,7 +818,7 @@ def cmd_I60100(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I602xx  Tank Product Label Configuration --------------------------------
+# I602xx -- Tank Product Label Config
 
 def cmd_I60200(station: StationState, _payload: str) -> str:
     lines = [
@@ -852,7 +838,7 @@ def cmd_I60200(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I609xx  Sensor Configuration Data ----------------------------------------
+# I609xx -- Sensor Configuration
 
 def cmd_I60900(station: StationState, _payload: str) -> str:
     lines = [
@@ -878,13 +864,10 @@ def cmd_I60900(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- I902xx  Clear Alarms/Reset -----------------------------------------------
+# I902xx -- Alarm Reset
+# If someone is trying to reset alarms, that's active tampering
 
 def cmd_I90200(station: StationState, _payload: str) -> str:
-    """
-    Alarm reset command -- significant event for honeypot.
-    An attacker trying to clear alarms is actively tampering.
-    """
     logger.warning(
         "ALARM RESET ATTEMPT",
         extra={"command": "I90200"},
@@ -905,13 +888,10 @@ def cmd_I90200(station: StationState, _payload: str) -> str:
     return "\n".join(lines)
 
 
-# -- S501xx  Set Date/Time ---------------------------------------------------
+# S501xx -- Set Date/Time
+# If an attacker is changing the time, that's a big deal -- always log it
 
 def cmd_S50100(station: StationState, payload: str) -> str:
-    """
-    An attacker setting date/time is a significant event -- always log it.
-    Format: S50100YYMMDDHHmm
-    """
     logger.warning(
         "DATE/TIME CHANGE ATTEMPT: payload=%r",
         payload,
@@ -927,10 +907,10 @@ def cmd_S50100(station: StationState, payload: str) -> str:
     return f"\nS50100\n{_ts(station)}\n\nDATE/TIME SET\n"
 
 
-# -- S601xx  Set Station Name ------------------------------------------------
+# S601xx -- Set Station Name
 
 def cmd_S60100(station: StationState, payload: str) -> str:
-    """Rename the station -- log this important change."""
+    # rename the station -- log this
     new_name = payload.strip()
     if not new_name:
         return "9999FF1B\n"
@@ -945,13 +925,11 @@ def cmd_S60100(station: StationState, payload: str) -> str:
     return f"\nS60100\n{_ts(station)}\n\nSTATION NAME SET: {new_name}\n"
 
 
-# -- S602xx  Set Product Label ------------------------------------------------
+# S602xx -- Set Product Label
+# S60200 sets all tanks, S60201-S60204 set individual tanks
+# (used to be copy-pasted 5 times, now its one function)
 
 def cmd_S602xx(station: StationState, payload: str, cmd: str) -> str:
-    """
-    Handle S60200 (all tanks) and S6020N (individual tank N).
-    Consolidated from 5 duplicate code blocks.
-    """
     tank_digit = cmd[5]  # '0' = all, '1'-'4' = individual
     new_label = payload.strip()
 
@@ -978,7 +956,7 @@ def cmd_S602xx(station: StationState, payload: str, cmd: str) -> str:
     return ""
 
 
-# -- Command Registry --------------------------------------------------------
+# Command registry -- maps command codes to handler functions
 
 INQUIRY_COMMANDS: dict[str, Callable[[StationState, str], str]] = {
     # System-level
@@ -1019,14 +997,10 @@ SET_COMMANDS: dict[str, Callable[[StationState, str], str]] = {
 # S602xx is handled specially (variable last digit)
 
 
-# -- Connection Handler -------------------------------------------------------
-
+# Connection handler -- parse the incoming data, figure out what command
+# they sent, and call the right function
 
 def handle_command(station: StationState, raw: bytes, remote_ip: str) -> str | None:
-    """
-    Parse raw TLS serial data, dispatch to the correct handler,
-    and return the response string (or None to send error code).
-    """
     decoded = raw.decode(errors="replace")
 
     # Strip the SOH prefix:  ^A (literal two chars) or 0x01
@@ -1099,20 +1073,17 @@ def handle_command(station: StationState, raw: bytes, remote_ip: str) -> str | N
     return None
 
 
-# -- Protocol Constants -------------------------------------------------------
-# Per Veeder-Root manual 576013-635:
-# Display format responses are wrapped: SOH + body + ETX
-# Error responses are: SOH + 9999FF1B + ETX
+# Protocol envelope characters (from the Veeder-Root serial interface manual)
+# Responses get wrapped in SOH...ETX, errors are SOH+9999FF1B+ETX
 SOH = "\x01"  # Start of Header (ASCII 01)
 ETX = "\x03"  # End of Text (ASCII 03)
 
 ERROR_RESPONSE = f"{SOH}9999FF1B{ETX}"
 
-# -- Network Server -----------------------------------------------------------
-
+# TCP server
 
 def run_server(station: StationState, host: str, port: int, buffer_size: int) -> None:
-    """Main select-based TCP server loop."""
+    # Main server loop -- uses select() so we can handle multiple connections
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.setblocking(False)
@@ -1168,7 +1139,7 @@ def _handle_client(
     active: list[socket.socket],
     station: StationState,
 ) -> None:
-    """Process one read event on a client socket."""
+    # Handle one client connection
     try:
         addr = conn.getpeername()
         remote_ip = addr[0]
@@ -1209,7 +1180,7 @@ def _handle_client(
 
 
 def _close(conn: socket.socket, active: list[socket.socket]) -> None:
-    """Safely remove and close a socket."""
+    # Clean up a socket
     if conn in active:
         active.remove(conn)
     try:
@@ -1218,7 +1189,7 @@ def _close(conn: socket.socket, active: list[socket.socket]) -> None:
         pass
 
 
-# -- Entry Point --------------------------------------------------------------
+# Entry point
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
