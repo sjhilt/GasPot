@@ -1,0 +1,288 @@
+{# =========================================================================
+   dashboard.html — TLS-350 In-Tank Inventory Dashboard
+   =========================================================================
+   This template renders the main HMI dashboard that mimics a Veeder-Root
+   TLS-350 Automatic Tank Gauge (ATG) console.  It is divided into three
+   visual sections:
+
+     1. Tank Gauge Cards  – graphical fill-level gauges for each tank
+     2. Detail View Table – a tabular summary of every tank's inventory
+     3. Connection Banner  – shown only when the ATG link is down
+
+   Data arrives via the Jinja2 context variable `tanks`, which is a list of
+   dicts.  Each dict contains: tank_id, product, volume, tc_volume, ullage,
+   height, water, temperature.
+
+   The page also includes an AJAX polling script (see the extra_scripts
+   block at the bottom) that refreshes all displayed values every 10 s
+   without a full page reload.
+   ========================================================================= #}
+
+{# --- Inherit the site-wide base layout (navbar, <head>, footer, etc.) --- #}
+{% extends "base.html" %}
+
+{# --- Page <title> ------------------------------------------------------ #}
+{% block title %}TLS-350 - IN-TANK INVENTORY{% endblock %}
+
+{% block content %}
+
+<!-- =====================================================================
+     PAGE HEADING
+     "IN-TANK INVENTORY" banner displayed at the top of the dashboard.
+     ===================================================================== -->
+<div class="page-title">IN-TANK INVENTORY</div>
+
+<!-- =====================================================================
+     SECTION 1 — TANK GAUGE CARDS
+     =====================================================================
+     A CSS-grid container (#tank-grid) that holds one card per tank.
+     Each card is rendered from the `tanks` list passed by the Flask view.
+     ===================================================================== -->
+<div class="tank-grid" id="tank-grid">
+    {% for t in tanks %}
+    <!-- =================================================================
+         INDIVIDUAL TANK CARD  (Tank {{ t.tank_id }})
+         =================================================================
+         Structure of each card:
+           .tank-header       – Tank ID number and product name
+           .gauge-container   – Visual bar gauge showing fill level
+           .tank-data         – Six key-value rows (volume, TC vol, etc.)
+
+         The card's DOM id ("tank-card-<id>") is used by the AJAX updater
+         to locate and refresh this card's values in real time.
+         ================================================================= -->
+    <div class="tank-card" id="tank-card-{{ t.tank_id }}">
+
+        <!-- Tank header: shows "TANK <id>" on the left and product name
+             (e.g. "UNLEADED", "DIESEL") on the right.                    -->
+        <div class="tank-header">
+            <span class="tank-id">TANK {{ t.tank_id }}</span>
+            <span>{{ t.product }}</span>
+        </div>
+
+        <!-- ---------------------------------------------------------------
+             FILL-LEVEL CALCULATION
+             ---------------------------------------------------------------
+             fill_pct = volume / (volume + ullage) * 100
+
+             "volume" is the current liquid level; "ullage" is the remaining
+             capacity.  Together they represent the total tank capacity.
+             If the denominator is zero (i.e., no capacity data), fill_pct
+             defaults to 0 to avoid a division-by-zero error.
+             --------------------------------------------------------------- -->
+        {% set fill_pct = (t.volume / (t.volume + t.ullage) * 100) if (t.volume + t.ullage) > 0 else 0 %}
+
+        <!-- ---------------------------------------------------------------
+             GAUGE VISUAL
+             ---------------------------------------------------------------
+             .gauge-container – The outer border that represents 100%.
+             .gauge-fill      – An inner <div> whose CSS height is set to
+                                fill_pct%.  This creates the "liquid bar"
+                                effect.  The data-tank attribute is used
+                                by JavaScript to target this element during
+                                AJAX updates.
+             .gauge-label     – Overlaid text showing the numeric %.
+             --------------------------------------------------------------- -->
+        <div class="gauge-container">
+            <div class="gauge-fill" style="height: {{ fill_pct|round(1) }}%"
+                 data-tank="{{ t.tank_id }}"></div>
+            <div class="gauge-label">{{ fill_pct|round(1) }}%</div>
+        </div>
+
+        <!-- ---------------------------------------------------------------
+             TANK DATA ROWS
+             ---------------------------------------------------------------
+             Six key-value pairs displayed beneath the gauge:
+               VOLUME      – Current product volume in gallons
+               TC VOLUME   – Temperature-compensated volume in gallons
+               ULLAGE      – Remaining capacity in gallons
+               HEIGHT      – Liquid height in inches
+               WATER       – Water level in inches (with alarm/warn class
+                             applied when water > 1.5 or > 1.0 inches
+                             respectively — triggers CSS color changes)
+               TEMP        – Product temperature in °F
+
+             The AJAX updater targets these <span class="value"> elements
+             by index (0–5) within .tank-data, so ordering must stay fixed.
+             --------------------------------------------------------------- -->
+        <div class="tank-data">
+            <div><span class="label">VOLUME</span><span class="value">{{ t.volume }} GAL</span></div>
+            <div><span class="label">TC VOLUME</span><span class="value">{{ t.tc_volume }} GAL</span></div>
+            <div><span class="label">ULLAGE</span><span class="value">{{ t.ullage }} GAL</span></div>
+            <div><span class="label">HEIGHT</span><span class="value">{{ t.height }} IN</span></div>
+            <div><span class="label">WATER</span>
+                <!-- Water level gets a conditional CSS class:
+                       "alarm" (red)  if water > 1.5 inches
+                       "warn"  (amber) if water > 1.0 inches
+                     This mirrors real ATG alarm thresholds. -->
+                <span class="value {% if t.water > 1.5 %}alarm{% elif t.water > 1.0 %}warn{% endif %}">
+                    {{ t.water }} IN</span></div>
+            <div><span class="label">TEMP</span><span class="value">{{ t.temperature }}°F</span></div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- =====================================================================
+     SECTION 2 — INVENTORY DETAIL TABLE
+     =====================================================================
+     A traditional HTML <table> repeating the same data shown in the gauge
+     cards, but in a compact, scannable format.  The <tbody> has an id so
+     the AJAX polling script can replace its contents wholesale.
+     ===================================================================== -->
+<div class="page-title" style="font-size: 22px;">DETAIL VIEW</div>
+<table class="inv-table">
+    <thead>
+        <!-- Column headers matching the fields in each tank dict -->
+        <tr>
+            <th>TANK</th>
+            <th>PRODUCT</th>
+            <th>VOLUME</th>
+            <th>TC VOL</th>
+            <th>ULLAGE</th>
+            <th>HEIGHT</th>
+            <th>WATER</th>
+            <th>TEMP</th>
+        </tr>
+    </thead>
+    <!-- #inv-tbody — the AJAX updater rebuilds this element's innerHTML
+         every 10 seconds with fresh data from /api/inventory.            -->
+    <tbody id="inv-tbody">
+        {% for t in tanks %}
+        <tr>
+            <td>{{ t.tank_id }}</td>
+            <td>{{ t.product }}</td>
+            <td>{{ t.volume }}</td>
+            <td>{{ t.tc_volume }}</td>
+            <td>{{ t.ullage }}</td>
+            <td>{{ t.height }}</td>
+            <td>{{ t.water }}</td>
+            <td>{{ t.temperature }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- =====================================================================
+     SECTION 3 — CONNECTION-FAILURE BANNER
+     =====================================================================
+     Displayed only when the Flask view sets `connected = False`, meaning
+     the HMI could not reach the GasPot ATG simulator over its serial /
+     TCP link.  The banner is styled with red text and border via inline
+     styles on top of the .terminal-block class from base.html.
+     ===================================================================== -->
+{% if not connected %}
+<div class="terminal-block" style="color: #ff3333; border-color: #ff3333;">
+*** ATG CONNECTION FAILED ***
+
+Check that GasPot is running and accessible.
+</div>
+{% endif %}
+{% endblock %}
+
+{# =========================================================================
+   EXTRA SCRIPTS BLOCK — AJAX LIVE-POLLING
+   =========================================================================
+   This block is injected after the main page scripts defined in base.html.
+   It sets up a 10-second polling interval that fetches fresh inventory data
+   from the REST endpoint /api/inventory and updates the DOM in-place,
+   avoiding a full page reload.
+   ========================================================================= #}
+{% block extra_scripts %}
+<script>
+/*  -------------------------------------------------------------------------
+    AJAX INVENTORY POLLER
+    -------------------------------------------------------------------------
+    Every 10 000 ms (10 s), this async function:
+      1. Fetches JSON from /api/inventory
+      2. Updates each tank's gauge height and percentage label
+      3. Updates the six data rows inside each tank card
+      4. Rebuilds the <tbody> of the detail table
+      5. Toggles the global connection-status indicator
+
+    If the fetch fails (network error, server down), the connection indicator
+    is set to "disconnected" so the operator has immediate visual feedback.
+    ------------------------------------------------------------------------- */
+setInterval(async () => {
+    try {
+        /* -- Step 1: Fetch latest inventory from the API endpoint --------- */
+        const resp = await fetch('/api/inventory');
+        const data = await resp.json();
+
+        /* If the server reports disconnected or returns no tank data,
+           bail out early — the existing values stay on screen. */
+        if (!data.connected || !data.tanks) return;
+
+        /* -- Step 2–3: Iterate over each tank and patch the DOM ----------- */
+        data.tanks.forEach(t => {
+
+            /* -- 2a: UPDATE GAUGE VISUAL ----------------------------------
+               Locate the .gauge-fill element via its data-tank attribute,
+               set its CSS height to the new fill percentage, and update
+               the overlaid text label.                                     */
+            const fill = document.querySelector(`[data-tank="${t.tank_id}"]`);
+            if (fill) {
+                fill.style.height = t.fill_pct + '%';
+                fill.parentElement.querySelector('.gauge-label').textContent = t.fill_pct + '%';
+            }
+
+            /* -- 2b: UPDATE CARD DATA ROWS --------------------------------
+               Select all .value spans inside the card.  They are in a fixed
+               order (VOLUME, TC VOL, ULLAGE, HEIGHT, WATER, TEMP) so we
+               can address them by index.
+
+               Special handling for WATER (index 4): dynamically apply the
+               "alarm" or "warn" CSS class based on threshold values,
+               matching the Jinja2 logic used at initial render.           */
+            const card = document.getElementById(`tank-card-${t.tank_id}`);
+            if (card) {
+                const vals = card.querySelectorAll('.tank-data .value');
+                if (vals.length >= 6) {
+                    vals[0].textContent = t.volume + ' GAL';      // VOLUME
+                    vals[1].textContent = t.tc_volume + ' GAL';   // TC VOLUME
+                    vals[2].textContent = t.ullage + ' GAL';      // ULLAGE
+                    vals[3].textContent = t.height + ' IN';       // HEIGHT
+                    vals[4].textContent = t.water + ' IN';        // WATER
+                    vals[4].className = 'value' + (t.water > 1.5 ? ' alarm' : t.water > 1.0 ? ' warn' : '');
+                    vals[5].textContent = t.temperature + '°F';   // TEMP
+                }
+            }
+        });
+
+        /* -- Step 4: REBUILD THE DETAIL TABLE -----------------------------
+           Rather than patching individual cells, we regenerate the entire
+           <tbody> innerHTML from the updated data.  This is simpler and
+           handles tanks being added or removed between polls.              */
+        const tbody = document.getElementById('inv-tbody');
+        if (tbody) {
+            tbody.innerHTML = data.tanks.map(t => `
+                <tr>
+                    <td>${t.tank_id}</td>
+                    <td>${t.product}</td>
+                    <td>${t.volume}</td>
+                    <td>${t.tc_volume}</td>
+                    <td>${t.ullage}</td>
+                    <td>${t.height}</td>
+                    <td>${t.water}</td>
+                    <td>${t.temperature}</td>
+                </tr>
+            `).join('');
+        }
+
+        /* -- Step 5: UPDATE CONNECTION INDICATOR --------------------------
+           The .connection-status element (defined in base.html) shows a
+           green/red dot.  Set its class to "connected" or "disconnected"
+           based on the API response.                                       */
+        document.querySelector('.connection-status').className =
+            'connection-status ' + (data.connected ? 'connected' : 'disconnected');
+
+    } catch (e) {
+        /* -- Error handler ------------------------------------------------
+           Any exception (network timeout, JSON parse error, etc.) means
+           we've lost contact with the server.  Mark the indicator red.     */
+        document.querySelector('.connection-status').className =
+            'connection-status disconnected';
+    }
+}, 10000);  /* Polling interval: 10 000 ms (10 seconds) */
+</script>
+{% endblock %}

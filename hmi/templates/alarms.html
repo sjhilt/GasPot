@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}TLS-350 - ALARM HISTORY{% endblock %}
+
+{% block content %}
+<div class="page-title">PRIORITY ALARM HISTORY</div>
+<div class="terminal-block">{{ alarm_text }}</div>
+
+<div class="page-title" style="font-size: 22px;">IN-TANK ALARM HISTORY</div>
+<div class="terminal-block">{{ tank_alarm_text }}</div>
+
+{% if not connected %}
+<div class="terminal-block" style="color: #ff3333; border-color: #ff3333;">
+*** ATG CONNECTION FAILED ***
+</div>
+{% endif %}
+{% endblock %}

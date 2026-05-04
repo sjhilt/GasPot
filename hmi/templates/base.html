@@ -1,0 +1,696 @@
+<!-- ==========================================================================
+     GasPot HMI — base.html
+     ===========================================================================
+     This is the Jinja2 base template for the GasPot honeypot's web-based HMI
+     (Human-Machine Interface). It visually emulates a Veeder-Root TLS-350
+     Automatic Tank Gauge (ATG) console — the kind of industrial control panel
+     found at gas stations to monitor underground fuel tank levels, alarms,
+     and deliveries.
+
+     Design philosophy:
+       • Authentic "green phosphor CRT" aesthetic so that the honeypot looks
+         convincing to anyone (or any scanner) probing it.
+       • Every visual choice — the colour palette, the font, the scanline
+         overlay — exists to faithfully replicate the experience of sitting in
+         front of a real TLS-350 serial terminal from the 1990s/2000s.
+     ========================================================================== -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Page title: child templates can override via "block title".
+         Defaults to "TLS-350 CONSOLE" to match the real hardware branding. -->
+    <title>{% block title %}TLS-350 CONSOLE{% endblock %}</title>
+
+    <style>
+        /* =====================================================================
+           FONT: VT323
+           =====================================================================
+           VT323 is a monospaced pixel font inspired by the DEC VT320 terminal.
+           Real TLS-350 consoles use a dot-matrix / terminal-style display, so
+           VT323 is the closest widely-available web font to that look.
+           Fallbacks: 'Courier New' (available on all OSes) → generic monospace.
+           ================================================================== */
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+        /* =====================================================================
+           RESET
+           =====================================================================
+           A minimal CSS reset. Removes default browser margins/padding and
+           switches everything to border-box so padding doesn't blow out widths.
+           ================================================================== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* =====================================================================
+           BODY — GREEN PHOSPHOR ON BLACK
+           =====================================================================
+           • background #0a0a0a: near-black, mimicking a powered-off CRT with
+             very faint ambient backlight. Pure #000 looks too digital.
+           • color #33ff33: classic P1 green phosphor colour. Real CRT phosphors
+             emitted this vivid green; it's the defining look of 1970s–90s
+             terminals (and the TLS-350 console).
+           • font-family: VT323 first (see font note above).
+           • min-height 100vh + flex column: ensures the footer sticks to the
+             bottom even when page content is short.
+           ================================================================== */
+        body {
+            background: #0a0a0a;
+            color: #33ff33;
+            font-family: 'VT323', 'Courier New', monospace;
+            font-size: 18px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* =====================================================================
+           CONSOLE HEADER BAR
+           =====================================================================
+           Mimics the top status line of a real TLS-350 console, which typically
+           displays the system name/model on the left and current date/time on
+           the right.
+           • background #111: slightly lighter than the body, creating a subtle
+             visual separation like the bezel area of the real console.
+           • border-bottom 2px solid #33ff33: a bright green divider line, as
+             if rendered by the phosphor display edge.
+           • flexbox with space-between: brand on the left, datetime on right.
+           ================================================================== */
+        .console-header {
+            background: #111;
+            border-bottom: 2px solid #33ff33;
+            padding: 8px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Brand text: "VEEDER-ROOT TLS-350 CONSOLE"
+           letter-spacing: 3px adds the slightly spread-out look of dot-matrix
+           characters on industrial displays. */
+        .console-header .brand {
+            font-size: 24px;
+            letter-spacing: 3px;
+        }
+
+        /* The "VEEDER-ROOT" portion is rendered in red (#ff3333) to match the
+           company's actual brand colour (Veeder-Root uses red in their logo).
+           This subtle detail improves realism. */
+        .console-header .brand .vr {
+            color: #ff3333;
+        }
+
+        /* Date/time readout on the right side of the header.
+           Uses the same green phosphor colour as body text. */
+        .console-header .datetime {
+            color: #33ff33;
+            font-size: 20px;
+        }
+
+        /* =====================================================================
+           CONNECTION STATUS INDICATOR
+           =====================================================================
+           A small coloured circle (LED) next to the clock that shows whether
+           the HMI is connected to the backend GasPot serial/network service.
+           This mimics the physical status LEDs found on real ATG hardware.
+           • 12×12px circle (border-radius: 50%).
+           • Two states defined below: .connected and .disconnected.
+           ================================================================== */
+        .connection-status {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        /* .connected: green LED with a soft glow (box-shadow), indicating the
+           HMI is successfully communicating with the ATG backend.
+           .disconnected: red LED with red glow, indicating communication loss.
+           The box-shadow creates a subtle "LED halo" effect for realism. */
+        .connected { background: #33ff33; box-shadow: 0 0 6px #33ff33; }
+        .disconnected { background: #ff3333; box-shadow: 0 0 6px #ff3333; }
+
+        /* =====================================================================
+           NAVIGATION BAR — FUNCTION KEY STRIP
+           =====================================================================
+           Real TLS-350 consoles are operated via a row of function keys
+           (F1, F2, F3…) printed on a membrane keypad below the screen. Each
+           key maps to a different system function (Inventory, Status, Alarms,
+           Reports, etc.).
+
+           This nav bar recreates that paradigm in the browser:
+           • Each link is styled to look like a function-key button.
+           • Labelled with "F1 INVENTORY", "F2 STATUS", etc. to mirror the
+             physical console layout.
+           • background #1a1a1a: slightly lighter than the body to set it apart,
+             like a separate panel zone on the real device.
+           • border-bottom with dim green (#226622): a muted border that frames
+             the nav area without being as bright as the header divider.
+           • flex-wrap: wraps gracefully on small screens.
+           ================================================================== */
+        nav {
+            background: #1a1a1a;
+            border-bottom: 1px solid #226622;
+            padding: 6px 20px;
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        /* Individual nav links styled as tactile "buttons".
+           • border: 1px solid #226622 — dim green border, like a recessed key.
+           • background: #111 — dark fill, looks like an unpressed key.
+           • transition 0.1s — snappy highlight on hover, no sluggish animation;
+             real hardware buttons respond instantly. */
+        nav a {
+            color: #33ff33;
+            text-decoration: none;
+            padding: 4px 14px;
+            border: 1px solid #226622;
+            background: #111;
+            font-family: 'VT323', monospace;
+            font-size: 16px;
+            letter-spacing: 1px;
+            transition: all 0.1s;
+        }
+
+        /* Hover / active state: inverts to green-on-black (background becomes
+           bright green, text becomes black). This "inverse video" effect is
+           exactly how selected menu items appear on real phosphor terminals. */
+        nav a:hover, nav a.active {
+            background: #33ff33;
+            color: #000;
+            border-color: #33ff33;
+        }
+
+        /* The "F1", "F2", etc. labels are rendered in a dimmer grey (#888)
+           so they read as secondary annotations — just like the small printed
+           function-key labels on a physical console keypad. */
+        nav a .fkey {
+            color: #888;
+            font-size: 13px;
+            margin-right: 4px;
+        }
+
+        /* When the button is hovered/active, the fkey label darkens to #333
+           so it doesn't compete with the now-black primary text. */
+        nav a:hover .fkey, nav a.active .fkey {
+            color: #333;
+        }
+
+        /* =====================================================================
+           MAIN CONTENT AREA
+           =====================================================================
+           The central workspace where child templates inject page-specific
+           content via "block content".
+           • flex: 1 — takes up all remaining vertical space so the footer
+             stays at the bottom.
+           • max-width: 1200px + margin auto — centres the content and prevents
+             lines from running too wide on large monitors (readability).
+           ================================================================== */
+        .content {
+            flex: 1;
+            padding: 20px;
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* Page title: large, letterspaced heading that matches the feel of
+           a TLS-350 screen title (e.g. "SYSTEM STATUS REPORT"). The bottom
+           border acts as a horizontal rule divider. */
+        .page-title {
+            font-size: 28px;
+            letter-spacing: 4px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #226622;
+        }
+
+        /* =====================================================================
+           TERMINAL OUTPUT BLOCK
+           =====================================================================
+           Used to display raw ATG command output (e.g. I-command responses)
+           exactly as a real serial terminal would render them.
+           • white-space: pre — preserves the exact whitespace/alignment that
+             ATG protocol responses rely on (fixed-width columnar data).
+           • background #0d0d0d — barely lighter than body, creating a subtle
+             "inset" panel look, as if it's a separate display region.
+           • overflow-x: auto — allows horizontal scrolling for wide output
+             without breaking the layout.
+           ================================================================== */
+        .terminal-block {
+            background: #0d0d0d;
+            border: 1px solid #226622;
+            padding: 16px;
+            margin-bottom: 16px;
+            white-space: pre;
+            font-size: 16px;
+            line-height: 1.4;
+            overflow-x: auto;
+        }
+
+        /* =====================================================================
+           TANK GAUGE CARDS — GRID LAYOUT
+           =====================================================================
+           Displays each fuel tank as an individual card in a responsive grid.
+           A real TLS-350 can monitor up to 16 tanks; this grid auto-fits cards
+           at a minimum of 260px wide, reflowing as the viewport narrows.
+           ================================================================== */
+        .tank-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        /* Individual tank card: bordered panel on the near-black background.
+           Visually represents one physical underground storage tank. */
+        .tank-card {
+            border: 1px solid #226622;
+            background: #0d0d0d;
+            padding: 16px;
+        }
+
+        /* Tank card header: shows the tank name and ID on one line.
+           letter-spacing mimics the industrial display's character grid. */
+        .tank-card .tank-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 20px;
+            letter-spacing: 2px;
+        }
+
+        /* Tank ID number rendered in amber/yellow (#ffcc00) to distinguish it
+           from the green data — real ATG consoles sometimes use amber for
+           identifiers and labels to differentiate them from values. */
+        .tank-card .tank-id {
+            color: #ffcc00;
+        }
+
+        /* =====================================================================
+           VISUAL TANK GAUGE (FILL-LEVEL BAR)
+           =====================================================================
+           A vertical bar chart representing the fuel level inside a tank.
+           Think of it as a simplified version of the bar-graph displays found
+           on higher-end ATG consoles.
+           • The container is a fixed-height box (120px) with a dark background.
+           • The fill element grows from the bottom upward, proportional to the
+             tank's current volume vs. capacity.
+           ================================================================== */
+        .gauge-container {
+            width: 100%;
+            height: 120px;
+            border: 1px solid #33ff33;
+            position: relative;
+            margin-bottom: 12px;
+            background: #050505;
+        }
+
+        /* The coloured fill bar:
+           • position absolute, bottom-anchored so it grows upward.
+           • linear-gradient from dark green (#1a6b1a) at the bottom to bright
+             green (#33ff33) at the top — gives a subtle "liquid depth" effect.
+           • opacity 0.7 — semi-transparent so the gauge label text on top
+             remains readable even against the fill colour.
+           • transition: height 1s — smooth animation when tank levels change
+             (e.g. during a simulated delivery event). */
+        .gauge-fill {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, #1a6b1a, #33ff33);
+            transition: height 1s ease;
+            opacity: 0.7;
+        }
+
+        /* Percentage label centred over the gauge.
+           White text with a dark text-shadow ensures readability against both
+           the filled (green) and empty (near-black) regions of the gauge. */
+        .gauge-label {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 28px;
+            color: #fff;
+            text-shadow: 0 0 8px #000;
+            z-index: 2;
+        }
+
+        /* =====================================================================
+           TANK DATA READOUT
+           =====================================================================
+           Key/value pairs displayed beneath each tank gauge (Volume, Ullage,
+           Height, Water, Temperature, etc.).
+           ================================================================== */
+        .tank-data {
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        /* Labels (e.g. "VOLUME", "HEIGHT") in dim grey so they recede
+           visually, letting the green values stand out — standard practice on
+           industrial control screens. Fixed width for alignment. */
+        .tank-data .label {
+            color: #888;
+            display: inline-block;
+            width: 100px;
+        }
+
+        /* Normal values in phosphor green. */
+        .tank-data .value {
+            color: #33ff33;
+        }
+
+        /* Warning values in amber (#ffcc00) — used when a reading is
+           approaching a threshold (e.g. low fuel, high water).
+           Alarm values in red (#ff3333) — a critical condition. These colours
+           match the standard industrial control convention:
+             Green = Normal, Amber/Yellow = Warning, Red = Alarm. */
+        .tank-data .warn { color: #ffcc00; }
+        .tank-data .alarm { color: #ff3333; }
+
+        /* =====================================================================
+           STATUS INDICATOR CLASSES
+           =====================================================================
+           Reusable text-colour classes for system-wide status representation.
+           .status-alarm includes a blinking animation — real ATG consoles
+           blink alarm text to draw operator attention. */
+        .status-normal { color: #33ff33; }
+        .status-warning { color: #ffcc00; }
+        .status-alarm { color: #ff3333; animation: blink 1s infinite; }
+
+        /* Blink keyframes: fades to 30% opacity and back, creating a pulsing
+           effect rather than a harsh on/off flash. This is more readable while
+           still being attention-grabbing. */
+        @keyframes blink {
+            50% { opacity: 0.3; }
+        }
+
+        /* =====================================================================
+           INVENTORY TABLE
+           =====================================================================
+           Tabular display for tank inventory data, styled to match the
+           fixed-width columnar output of a real TLS-350 inventory report.
+           • Headers in grey (labels), data in green (values).
+           • Subtle row hover highlight (#1a1a1a) for usability.
+           • Dim green borders (#226622, #111) keep the table structure visible
+             without overpowering the data.
+           ================================================================== */
+        .inv-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+        }
+
+        .inv-table th {
+            color: #888;
+            text-align: left;
+            padding: 4px 12px;
+            border-bottom: 1px solid #226622;
+            font-weight: normal;
+            letter-spacing: 1px;
+        }
+
+        .inv-table td {
+            padding: 6px 12px;
+            border-bottom: 1px solid #111;
+        }
+
+        .inv-table tr:hover td {
+            background: #1a1a1a;
+        }
+
+        /* =====================================================================
+           REPORT TYPE SELECTOR TABS
+           =====================================================================
+           Tab-style links for switching between report types (Delivery,
+           Shift, Leak Test, etc.). Styled identically to the nav bar buttons
+           to maintain visual consistency across the console UI. */
+        .report-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .report-tabs a {
+            color: #33ff33;
+            text-decoration: none;
+            padding: 4px 12px;
+            border: 1px solid #226622;
+            background: #111;
+            font-family: 'VT323', monospace;
+            font-size: 15px;
+        }
+
+        /* Same inverse-video hover/active effect as the main nav buttons. */
+        .report-tabs a:hover, .report-tabs a.active {
+            background: #33ff33;
+            color: #000;
+        }
+
+        /* =====================================================================
+           CONSOLE INPUT AREA
+           =====================================================================
+           A text input and submit button styled to look like a serial terminal
+           command prompt. Allows users to type raw ATG protocol commands
+           (e.g. "I20100" for tank 1 inventory) and see the response.
+           • Input field: dark background, green border and text — looks like
+             typing into a terminal.
+           • Focus glow: a faint green box-shadow (#33ff3344) simulates the
+             slight brightness increase of a CRT when a cursor is active.
+           • Button: dark green fill that inverts on hover (same pattern as
+             all interactive elements in this theme).
+           ================================================================== */
+        .console-input-area {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .console-input-area input {
+            flex: 1;
+            background: #111;
+            border: 1px solid #33ff33;
+            color: #33ff33;
+            font-family: 'VT323', monospace;
+            font-size: 20px;
+            padding: 8px 12px;
+            outline: none;
+        }
+
+        .console-input-area input:focus {
+            box-shadow: 0 0 8px #33ff3344;
+        }
+
+        .console-input-area button {
+            background: #226622;
+            border: 1px solid #33ff33;
+            color: #33ff33;
+            font-family: 'VT323', monospace;
+            font-size: 18px;
+            padding: 8px 20px;
+            cursor: pointer;
+        }
+
+        .console-input-area button:hover {
+            background: #33ff33;
+            color: #000;
+        }
+
+        /* =====================================================================
+           CRT SCANLINE OVERLAY
+           =====================================================================
+           This is arguably the most important visual-authenticity trick.
+
+           A pseudo-element (::after) covers the entire viewport with a
+           repeating pattern of thin horizontal lines — simulating the visible
+           scanlines on a real CRT monitor.
+
+           How it works:
+           • A repeating-linear-gradient alternates between fully transparent
+             (2px) and very slightly opaque black (rgba 0,0,0, 0.08 — 2px).
+           • This creates 2px transparent + 2px dark stripes stacked vertically
+             across the whole screen.
+           • pointer-events: none — ensures the overlay doesn't block clicks or
+             interaction with elements underneath.
+           • z-index: 9999 — sits on top of all content so the scanlines are
+             visible everywhere.
+           • position: fixed — the scanlines stay in place even during scroll,
+             just like on a real CRT where the scanlines are a property of the
+             display hardware, not the content.
+
+           Combined with the green phosphor colour scheme and VT323 font, this
+           completes the "you are looking at a real CRT terminal" illusion.
+           ================================================================== */
+        body::after {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 0, 0, 0.08) 2px,
+                rgba(0, 0, 0, 0.08) 4px
+            );
+            z-index: 9999;
+        }
+
+        /* =====================================================================
+           FOOTER
+           =====================================================================
+           A simple footer bar at the bottom of the page. Intentionally dim
+           (#555 text on #111 background) — it carries the honeypot disclaimer
+           ("NOT A REAL ATG SYSTEM") which is important for legal/ethical
+           reasons but shouldn't draw attention during normal interaction. */
+        .console-footer {
+            background: #111;
+            border-top: 1px solid #226622;
+            padding: 6px 20px;
+            font-size: 14px;
+            color: #555;
+            text-align: center;
+        }
+
+        /* =====================================================================
+           RESPONSIVE ADJUSTMENTS
+           =====================================================================
+           At 600px and below (typical phone width):
+           • Reduce base font size for readability on small screens.
+           • Collapse tank grid to a single column.
+           • Shrink nav buttons so they all fit without excessive wrapping.
+           ================================================================== */
+        @media (max-width: 600px) {
+            body { font-size: 14px; }
+            .tank-grid { grid-template-columns: 1fr; }
+            nav { gap: 2px; }
+            nav a { font-size: 13px; padding: 3px 8px; }
+        }
+    </style>
+
+    <!-- Hook for child templates to add page-specific <head> content
+         (additional CSS, meta tags, etc.) -->
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+    <!-- ====================================================================
+         CONSOLE HEADER
+         ====================================================================
+         Top bar replicating the TLS-350 console's header region.
+         Left side: VEEDER-ROOT branding (red) + model identifier (green).
+         Right side: connection status LED + live clock.
+         ==================================================================== -->
+    <div class="console-header">
+        <div class="brand">
+            <!-- "VEEDER-ROOT" in red to match the company's actual brand colour -->
+            <span class="vr">VEEDER-ROOT</span> TLS-350 CONSOLE
+        </div>
+        <div class="datetime">
+            <!-- Connection status LED: Jinja2 conditional renders either
+                 'connected' (green) or 'disconnected' (red) class based on
+                 the `connected` context variable passed from the Flask view.
+                 This tells the operator at a glance whether the HMI can
+                 communicate with the ATG backend process. -->
+            <span class="connection-status {{ 'connected' if connected else 'disconnected' }}"></span>
+
+            <!-- Current timestamp, initially server-rendered via `now` context
+                 variable, then updated client-side every second by JavaScript
+                 (see script block below). -->
+            <span id="header-time">{{ now }}</span>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         NAVIGATION BAR — FUNCTION KEY STRIP
+         ====================================================================
+         Emulates the physical function-key row on a TLS-350 console.
+         Each link maps to a major system function:
+           F1 = INVENTORY  — current tank volumes, ullage, product levels
+           F2 = STATUS     — system & sensor status overview
+           F3 = ALARMS     — active and historical alarm events
+           F4 = REPORTS    — delivery reports, shift reports, leak test results
+           F5 = CONSOLE    — raw ATG command interface (type protocol commands)
+
+         Jinja2 conditionals add the 'active' class to highlight which page
+         the user is currently viewing, providing visual orientation.
+         ==================================================================== -->
+    <nav>
+        <a href="/" class="{% if request.path == '/' %}active{% endif %}">
+            <span class="fkey">F1</span> INVENTORY
+        </a>
+        <a href="/status" class="{% if request.path == '/status' %}active{% endif %}">
+            <span class="fkey">F2</span> STATUS
+        </a>
+        <a href="/alarms" class="{% if request.path == '/alarms' %}active{% endif %}">
+            <span class="fkey">F3</span> ALARMS
+        </a>
+        <a href="/reports?type=delivery" class="{% if request.path == '/reports' %}active{% endif %}">
+            <span class="fkey">F4</span> REPORTS
+        </a>
+        <a href="/console" class="{% if request.path == '/console' %}active{% endif %}">
+            <span class="fkey">F5</span> CONSOLE
+        </a>
+    </nav>
+
+    <!-- ====================================================================
+         MAIN CONTENT AREA
+         ====================================================================
+         Child templates inject their page-specific content here via
+         the "block content" tag. This is the "screen" of the virtual console. -->
+    <div class="content">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- ====================================================================
+         FOOTER — HONEYPOT DISCLAIMER
+         ====================================================================
+         Displays a dim notice that this is a simulator, not a real ATG.
+         Important for legal and ethical reasons — anyone who inspects the
+         page source or looks carefully at the footer will see this notice.
+         Intentionally styled to be unobtrusive during casual interaction. -->
+    {% if footer_text %}
+    <div class="console-footer">
+        {{ footer_text }}
+    </div>
+    {% endif %}
+
+    <!-- ====================================================================
+         CLIENT-SIDE CLOCK UPDATE
+         ====================================================================
+         Updates the header timestamp every second so the console always
+         shows a live clock — just like a real TLS-350 display that
+         continuously shows the current date and time.
+         Format: MM/DD/YYYY HH:MM:SS (US locale, 24-hour).
+         ==================================================================== -->
+    <script>
+        // Update clock every second
+        setInterval(() => {
+            const now = new Date();
+            const ts = now.toLocaleDateString('en-US', {month:'2-digit', day:'2-digit', year:'numeric'})
+                + ' ' + now.toLocaleTimeString('en-US', {hour12:false});
+            document.getElementById('header-time').textContent = ts;
+        }, 1000);
+    </script>
+
+    <!-- Hook for child templates to add page-specific scripts
+         (e.g. auto-refresh polling, chart rendering, WebSocket connections). -->
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

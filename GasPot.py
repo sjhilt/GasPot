@@ -157,6 +157,17 @@ class Tank:
     fill_start: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
     fill_stop: datetime.datetime = field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
 
+    # Consumption simulation -- how fast this tank drains (gallons/hour).
+    # Each tank gets a slightly different rate so they don't all empty at
+    # the same time.  Set to 0.0 to disable for this tank.
+    consumption_gph: float = 0.0
+
+    # Slow-drift accumulators for temperature and water level.
+    # These accumulate tiny random changes each tick (~2s) so readings
+    # look stable on rapid refresh but still drift realistically over hours.
+    _temp_drift: float = field(default=0.0, repr=False)
+    _water_drift: float = field(default=0.0, repr=False)
+
     # Internal: per-request jitter seed, updated each query
     _query_count: int = field(default=0, repr=False)
 
@@ -170,15 +181,17 @@ class Tank:
 
     @property
     def temperature(self) -> float:
-        # Add a tiny bit of drift each time so it looks like a real sensor reading
-        drift = random.uniform(-0.15, 0.15)
-        return round(self.base_temperature + drift, 2)
+        # Returns base_temperature + slow-drifting offset.
+        # The _temp_drift accumulator is nudged each tick (~2s) by a tiny
+        # amount, so readings are rock-stable on rapid refresh but still
+        # wander ±1°F over many hours -- just like a real underground tank
+        # whose temperature barely changes.
+        return round(self.base_temperature + self._temp_drift, 2)
 
     @property
     def water(self) -> float:
-        # Water level with a little drift
-        drift = random.uniform(-0.02, 0.02)
-        return round(max(0.0, self.base_water_inches + drift), 2)
+        # Same slow-drift approach as temperature.
+        return round(max(0.0, self.base_water_inches + self._water_drift), 2)
 
     @property
     def height(self) -> float:
@@ -210,6 +223,36 @@ class Tank:
 
     def fmt_height(self) -> str:
         return f"{self.height:.2f}"
+
+    def tick_consumption(self, elapsed_seconds: float,
+                         time_of_day_factor: float = 1.0) -> None:
+        """Simulate fuel being sold -- reduce fill_fraction based on
+        consumption_gph and the elapsed time since the last tick.
+
+        The rate has a small random jitter (±15%) each tick to simulate
+        the irregular pattern of real customer purchases -- sometimes
+        nobody is buying, sometimes several cars at once.
+
+        time_of_day_factor scales the rate:
+            1.0  = normal daytime business
+            0.6  = early morning / late evening (slow)
+            0.05 = overnight closed hours (near zero, just a trickle
+                    for generator/cooler fuel consumption)
+            1.3  = rush hour peak
+        """
+        if self.consumption_gph <= 0 or elapsed_seconds <= 0:
+            return
+
+        # Jitter: sometimes busy, sometimes quiet
+        jitter = random.uniform(0.85, 1.15)
+        effective_rate = self.consumption_gph * jitter * time_of_day_factor
+        gallons_consumed = effective_rate * (elapsed_seconds / 3600.0)
+
+        # Convert gallons consumed to a fill_fraction decrease
+        cap = self.capacity
+        if cap > 0:
+            fraction_consumed = gallons_consumed / cap
+            self.fill_fraction = max(0.01, self.fill_fraction - fraction_consumed)
 
 
 @dataclass
@@ -281,6 +324,17 @@ def build_station(config: configparser.ConfigParser) -> StationState:
                 fill_stop=fill_stop,
             )
         )
+
+    # Consumption simulation -- set per-tank drain rates from config
+    # Each tank gets the base GPH ±30% so they drain at different rates
+    base_gph = 0.0
+    if config.has_section("consumption") and config.getboolean("consumption", "enabled", fallback=False):
+        base_gph = config.getfloat("consumption", "gallons_per_hour", fallback=80.0)
+
+    for t in tanks:
+        if base_gph > 0:
+            # Randomize ±30% so tanks don't all empty at the same time
+            t.consumption_gph = base_gph * random.uniform(0.70, 1.30)
 
     return StationState(name=station_name, tanks=tanks)
 
@@ -1082,7 +1136,97 @@ ERROR_RESPONSE = f"{SOH}9999FF1B{ETX}"
 
 # TCP server
 
-def run_server(station: StationState, host: str, port: int, buffer_size: int) -> None:
+def _get_time_of_day_factor(hour: int) -> float:
+    """Return a consumption rate multiplier based on time of day.
+
+    Models realistic gas station traffic patterns:
+        - Overnight (11 PM - 5 AM):  nearly closed, just a trickle
+          for generator/refrigeration fuel use
+        - Early morning (5-7 AM):    opening up, light traffic
+        - Morning rush (7-9 AM):     commuters filling up
+        - Midday (9 AM - 4 PM):      steady normal traffic
+        - Evening rush (4-7 PM):     commuters again, peak
+        - Evening (7-11 PM):         winding down
+
+    With these factors, a base GPH of 80 averages out to roughly
+    50 effective GPH over 24 hours.  At ~50 GPH per tank with
+    ~6000 gallon tanks, each tank empties in about 5 days, meaning
+    deliveries happen roughly once a week per tank — realistic for
+    a moderately busy station.
+    """
+    if 23 <= hour or hour < 5:       # Overnight -- station closed/minimal
+        return 0.05
+    elif 5 <= hour < 7:              # Early morning -- opening, light traffic
+        return 0.40
+    elif 7 <= hour < 9:              # Morning rush -- commuters
+        return 1.30
+    elif 9 <= hour < 12:             # Late morning -- steady
+        return 1.00
+    elif 12 <= hour < 14:            # Lunch rush -- bump
+        return 1.15
+    elif 14 <= hour < 16:            # Afternoon -- steady
+        return 0.90
+    elif 16 <= hour < 19:            # Evening rush -- peak
+        return 1.40
+    elif 19 <= hour < 21:            # Evening -- winding down
+        return 0.60
+    else:                            # Late evening (21-23) -- slow
+        return 0.25
+
+
+def _tick_consumption(station: StationState, elapsed: float,
+                      delivery_threshold: float, delivery_fill_to: float) -> None:
+    """Simulate fuel consumption and auto-delivery for all tanks.
+
+    Called every select() cycle (every ~2 seconds).  Each tank drains
+    based on its consumption_gph rate, scaled by the time-of-day factor
+    so consumption is realistic -- busy during rush hours, near-zero
+    overnight when the station is effectively closed.
+
+    With default settings (80 GPH base), tanks drain to the delivery
+    threshold roughly once a week, at which point an automatic delivery
+    is triggered to refill them.
+
+    Args:
+        station: The station state with all tanks
+        elapsed: Seconds since the last tick
+        delivery_threshold: Fill fraction (0.0-1.0) below which to trigger delivery
+        delivery_fill_to: Fill fraction (0.0-1.0) to fill to after delivery
+    """
+    now = datetime.datetime.now(datetime.UTC)
+    hour = now.hour
+    tod_factor = _get_time_of_day_factor(hour)
+
+    for t in station.tanks:
+        old_fill = t.fill_fraction
+        t.tick_consumption(elapsed, time_of_day_factor=tod_factor)
+
+        # Nudge temperature and water drift accumulators.
+        # Each tick (~2s) adds a *tiny* random step.  At ±0.001°F per
+        # tick, it takes ~500 ticks (about 17 minutes) to drift just
+        # 0.5°F — readings look rock-stable on rapid refresh but still
+        # wander slowly over hours, just like a real underground tank.
+        # Clamped to ±0.50°F and ±0.05 inches total drift.
+        t._temp_drift += random.uniform(-0.001, 0.001)
+        t._temp_drift = max(-0.50, min(0.50, t._temp_drift))
+        t._water_drift += random.uniform(-0.0005, 0.0005)
+        t._water_drift = max(-0.05, min(0.05, t._water_drift))
+
+        # Auto-delivery: when tank drops below threshold, simulate a
+        # fuel truck delivery (fill back up to delivery_fill_to level)
+        if t.fill_fraction < delivery_threshold and old_fill >= delivery_threshold:
+            logger.info(
+                "Tank %d (%s) at %.1f%% -- triggering auto-delivery to %.0f%%",
+                t.number, t.product, t.fill_fraction * 100, delivery_fill_to * 100,
+            )
+            # Record delivery timestamps
+            t.fill_start = now
+            t.fill_fraction = delivery_fill_to
+            t.fill_stop = now + datetime.timedelta(minutes=random.randint(8, 15))
+
+
+def run_server(station: StationState, host: str, port: int, buffer_size: int,
+               config: configparser.ConfigParser | None = None) -> None:
     # Main server loop -- uses select() so we can handle multiple connections
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -1092,6 +1236,25 @@ def run_server(station: StationState, host: str, port: int, buffer_size: int) ->
 
     logger.info("GasPot v%s listening on %s:%d", __version__, host, port)
     logger.info("Station: %s  |  Tanks: %d", station.name, len(station.tanks))
+
+    # Consumption simulation settings from config
+    consumption_enabled = False
+    delivery_threshold = 0.20  # 20% fill
+    delivery_fill_to = 0.85   # 85% fill
+    if config and config.has_section("consumption"):
+        consumption_enabled = config.getboolean("consumption", "enabled", fallback=False)
+        delivery_threshold = config.getfloat("consumption", "delivery_threshold", fallback=20) / 100.0
+        delivery_fill_to = config.getfloat("consumption", "delivery_fill_to", fallback=85) / 100.0
+
+    if consumption_enabled:
+        gph_rates = [f"T{t.number}:{t.consumption_gph:.0f}" for t in station.tanks]
+        logger.info("Consumption simulation ON  |  GPH: %s  |  Delivery at %.0f%% → %.0f%%",
+                     ", ".join(gph_rates), delivery_threshold * 100, delivery_fill_to * 100)
+    else:
+        logger.info("Consumption simulation OFF (tank levels stay static)")
+
+    import time as _time
+    last_tick = _time.monotonic()
 
     active: list[socket.socket] = [server]
     shutdown_event = threading.Event()
@@ -1109,6 +1272,14 @@ def run_server(station: StationState, host: str, port: int, buffer_size: int) ->
                 readable, _, errored = select.select(active, [], active, 2.0)
             except (OSError, ValueError):
                 break
+
+            # Consumption tick -- runs every select() cycle (~2 seconds)
+            # even when no connections come in, so tanks drain continuously
+            if consumption_enabled:
+                now_mono = _time.monotonic()
+                elapsed = now_mono - last_tick
+                last_tick = now_mono
+                _tick_consumption(station, elapsed, delivery_threshold, delivery_fill_to)
 
             for sock in errored:
                 active.remove(sock)
@@ -1273,7 +1444,7 @@ def main(argv: list[str] | None = None) -> None:
     port = config.getint("host", "tcp_port")
     buf = config.getint("host", "buffer_size")
 
-    run_server(station, host, port, buf)
+    run_server(station, host, port, buf, config=config)
 
 
 if __name__ == "__main__":

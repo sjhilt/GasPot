@@ -1,17 +1,20 @@
-# GasPot v2.0 — Veeder-Root TLS ATG Honeypot
+# GasPot v2.2 — Veeder-Root TLS ATG Honeypot
 
 > A honeypot that emulates a **Veeder-Root TLS-350 / TLS-450** Automatic Tank Gauge (ATG) controller commonly found at gas stations worldwide.  All connection attempts and commands are logged for threat-intelligence collection.
 
-Originally created by **Kyle Wilhoit** and **Stephen Hilt** — modernised in 2026 with expanded command support, structured logging, and cleaner architecture.
+Originally created by **Kyle Wilhoit** and **Stephen Hilt** — modernised in 2026 with expanded command support, structured logging, cleaner architecture, fuel consumption simulation, and a web-based HMI.
 
 ---
 
-## What's New in v2.0
+## What's New in v2.2
 
-| Area | Before (v1) | After (v2) |
+| Area | Before (v1) | After (v2.2) |
 |------|-------------|------------|
 | **Commands** | 5 inquiry + S602xx | **21 inquiry + 3 set/write** command families |
 | **Architecture** | Globals + string concatenation | Dataclasses (`Tank`, `StationState`) + clean handler functions |
+| **Tank Geometry** | Random numbers | Real horizontal cylinder math — height/volume/ullage are physically consistent |
+| **Fuel Consumption** | Static levels forever | **Live drain simulation** — tanks drain at configurable GPH with auto-delivery when low |
+| **Web HMI** | None | **Flask-based TLS-350 HMI** — retro green-phosphor console UI with live tank gauges |
 | **Logging** | Manual file.write() | Python `logging` module with dual output (file + console) |
 | **JSON Logs** | No | `--json-log` flag for SIEM / Splunk / ELK ingest |
 | **Code duplication** | S602xx copy-pasted 5× | Single consolidated `cmd_S602xx()` handler |
@@ -265,7 +268,48 @@ min_ullage = 3000
 max_ullage = 9999
 ```
 
+### Fuel Consumption Simulation
+
+The `[consumption]` section enables realistic tank-level drain over time.  Tanks consume fuel at a configurable rate (gallons per hour) with ±30% randomization per tank, so they don't all empty at the same time.  When any tank drops below the `delivery_threshold`, an automatic fuel delivery is triggered to refill it — just like a real gas station.
+
+```ini
+[consumption]
+enabled = true
+gallons_per_hour = 80      # base GPH per tank (randomized ±30%)
+delivery_threshold = 20    # auto-deliver when tank drops below 20%
+delivery_fill_to = 85      # fill to 85% after delivery
+```
+
+This makes the honeypot much harder to fingerprint — an attacker querying I20100 multiple times will see tank levels slowly decreasing, deliveries happening, and delivery reports with realistic timestamps.
+
 **Tip:** Localise station names and product labels to match the region where you deploy the honeypot. This makes it harder for attackers to fingerprint it as a honeypot.
+
+---
+
+## Web HMI
+
+GasPot includes a Flask-based web HMI that mimics the look and feel of a real Veeder-Root TLS-350 console.  It connects to the running GasPot instance over TCP and renders the data in a retro green-phosphor-on-black terminal style.
+
+```bash
+cd hmi
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python app.py --port 8080
+```
+
+Then open `http://localhost:8080` in your browser.
+
+### HMI Pages
+
+| Page | Description |
+|------|-------------|
+| **Dashboard** (`/`) | Live tank inventory with fill-level gauges (auto-refreshes every 10s) |
+| **System Status** (`/status`) | System info + per-tank alarm status |
+| **Alarms** (`/alarms`) | Priority alarm history + in-tank alarm history |
+| **Reports** (`/reports`) | Delivery, leak, diagnostics, sensor, and config reports |
+| **Console** (`/console`) | Raw TLS command terminal — send any command and see the response |
+
+See [`hmi/README.md`](hmi/README.md) for full HMI documentation.
 
 ---
 
@@ -291,26 +335,38 @@ max_ullage = 9999
 ## Architecture
 
 ```
-GasPot.py
-├── Data Model
-│   ├── Tank          — dataclass for per-tank state (volume, temp, etc.)
-│   └── StationState  — dataclass for station-wide state (name, tanks[], serial#)
-├── Command Handlers
-│   ├── cmd_I10100()  — System Status
-│   ├── cmd_I20100()  — In-Tank Inventory
-│   ├── ...           — 21 inquiry handlers
-│   ├── cmd_S50100()  — Set Date/Time
-│   ├── cmd_S60100()  — Set Station Name
-│   └── cmd_S602xx()  — Set Product Labels (consolidated)
-├── Command Registry
-│   ├── INQUIRY_COMMANDS dict
-│   └── SET_COMMANDS dict
-├── Network Server
-│   ├── run_server()      — select-based TCP loop with signal handling
-│   ├── handle_command()  — parse SOH prefix, dispatch to handler
-│   └── _handle_client()  — per-connection read/write
-└── Entry Point
-    └── main()            — arg parsing, config, logging, server start
+GasPot/
+├── GasPot.py                 — Main honeypot server
+│   ├── Data Model
+│   │   ├── Tank              — dataclass: fill_fraction, geometry, consumption_gph
+│   │   └── StationState      — dataclass: name, tanks[], serial#, time override
+│   ├── Tank Geometry
+│   │   ├── _cylinder_volume_from_height()  — horizontal cylinder math
+│   │   └── _height_from_fill_fraction()    — Newton's method solver
+│   ├── Command Handlers (21 inquiry + 3 set/write)
+│   │   ├── cmd_I10100()      — System Status
+│   │   ├── cmd_I20100()      — In-Tank Inventory (most probed)
+│   │   ├── ...               — 19 more inquiry handlers
+│   │   ├── cmd_S50100()      — Set Date/Time (WARNING)
+│   │   ├── cmd_S60100()      — Set Station Name (WARNING)
+│   │   └── cmd_S602xx()      — Set Product Labels (consolidated)
+│   ├── Consumption Simulation
+│   │   ├── Tank.tick_consumption()  — per-tank drain with jitter
+│   │   └── _tick_consumption()      — auto-delivery when tanks get low
+│   ├── Network Server
+│   │   ├── run_server()      — select-based TCP loop + consumption tick
+│   │   ├── handle_command()  — parse SOH prefix, dispatch to handler
+│   │   └── _handle_client()  — per-connection read/write
+│   └── Entry Point
+│       └── main()            — arg parsing, config, logging, server start
+│
+├── hmi/                      — Web-based TLS-350 HMI
+│   ├── app.py                — Flask app with dashboard, status, alarms, reports, console
+│   ├── atg_client.py         — TCP client for talking to GasPot
+│   └── templates/            — Retro green-phosphor HTML templates
+│
+├── config.ini.dist           — Default configuration template
+└── README.md
 ```
 
 ---

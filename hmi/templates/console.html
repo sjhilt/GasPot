@@ -1,0 +1,233 @@
+{# ============================================================================
+   console.html — TLS-350 Raw Command Console
+   ============================================================================
+   This template renders the RAW COMMAND CONSOLE page of the TLS-350 HMI.
+   It extends "base.html" to inherit the common site layout (header,
+   navigation sidebar, footer, stylesheets, etc.).
+
+   Purpose:
+     Provides a direct, interactive interface for sending arbitrary TLS-350
+     serial protocol commands to the ATG (Automatic Tank Gauge) backend and
+     viewing the raw responses. This is analogous to a serial terminal
+     connected directly to the TLS-350's RS-232 port.
+
+   Key features:
+     1. Text input field — The operator can type any valid TLS command
+        (e.g., "I20100" for tank inventory) and press Enter or click SEND.
+
+     2. Quick-access buttons — A row of pre-configured buttons for the most
+        commonly used TLS function codes. Clicking one populates the input
+        field and immediately sends the command, saving the operator from
+        having to memorize or type command codes.
+
+     3. Console output area — A scrollable, terminal-styled div that
+        accumulates command/response history, showing both what was sent
+        and what was received, like a serial monitor.
+
+     4. JavaScript command submission — Commands are sent asynchronously via
+        fetch() POST to the /api/command endpoint. The page does NOT reload;
+        responses are appended to the console output in real time.
+
+   This page has no server-side template variables beyond those provided by
+   base.html. All interactivity is handled client-side via JavaScript.
+   ============================================================================ #}
+
+{% extends "base.html" %}
+
+{# --- Page title (appears in the browser tab via base.html's <title> block) --- #}
+{% block title %}TLS-350 - RAW CONSOLE{% endblock %}
+
+{% block content %}
+{# --- Page heading displayed at the top of the content area --- #}
+<div class="page-title">RAW COMMAND CONSOLE</div>
+
+<!-- ========================================================================
+     Console Input Area
+     ========================================================================
+     Contains a text input and a SEND button. Together they form the primary
+     mechanism for the operator to issue TLS commands.
+
+     - The <input> element:
+         • id="cmd-input" — Referenced by JavaScript to read/clear the value.
+         • placeholder text shows an example command (I20100) as a hint.
+         • autofocus — The cursor is placed here automatically on page load
+           so the operator can start typing immediately.
+         • onkeydown handler — Listens for the Enter key and calls sendCmd()
+           so the operator doesn't have to click the button.
+
+     - The <button> element:
+         • onclick="sendCmd()" — Triggers the same async command submission
+           function as pressing Enter in the input field.
+     ======================================================================== -->
+<div class="console-input-area">
+    <input type="text" id="cmd-input" placeholder="Enter TLS command (e.g. I20100)" autofocus
+           onkeydown="if(event.key==='Enter') sendCmd()">
+    <button onclick="sendCmd()">SEND</button>
+</div>
+
+<!-- ========================================================================
+     Quick Command Buttons
+     ========================================================================
+     A row of pre-labeled buttons that act as shortcuts for frequently used
+     TLS-350 function codes. Each button calls quickCmd('...') with a
+     hardcoded command string, which sets the input field value and
+     immediately fires sendCmd().
+
+     This saves the operator from needing to remember numeric command codes
+     and provides one-click access to the most common diagnostic and
+     reporting functions.
+
+     Button mapping (command → description):
+       I10100 — System status (software version, serial number, etc.)
+       I10200 — System configuration (installed modules, options)
+       I11100 — Active alarms list
+       I20100 — Tank inventory (fuel levels, volume, temperature, water)
+       I20200 — Delivery report (recent fuel deliveries)
+       I20300 — Leak detection report
+       I20500 — Tank status (operational state of each tank)
+       I20600 — Tank-level alarms (high/low/water/etc.)
+       I20700 — Diagnostics report (sensor health, self-test results)
+       I30100 — Sensor status (connected probes, line leak detectors)
+       I50100 — Current date and time on the ATG
+       I60100 — Tank configuration (tank dimensions, product labels)
+
+     All buttons share identical inline styling to match the retro green-on-
+     black terminal aesthetic:
+       - Dark background (#111), green text (#33ff33), green border (#226622)
+       - VT323 monospaced font for an authentic CRT look
+     ======================================================================== -->
+<!-- Quick command buttons -->
+<div style="margin-bottom: 16px; display: flex; gap: 4px; flex-wrap: wrap;">
+    <button onclick="quickCmd('I10100')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I10100 SYS STATUS</button>
+    <button onclick="quickCmd('I10200')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I10200 SYS CONFIG</button>
+    <button onclick="quickCmd('I11100')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I11100 ALARMS</button>
+    <button onclick="quickCmd('I20100')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I20100 INVENTORY</button>
+    <button onclick="quickCmd('I20200')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I20200 DELIVERY</button>
+    <button onclick="quickCmd('I20300')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I20300 LEAK</button>
+    <button onclick="quickCmd('I20500')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I20500 STATUS</button>
+    <button onclick="quickCmd('I20600')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I20600 TANK ALARMS</button>
+    <button onclick="quickCmd('I20700')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I20700 DIAG</button>
+    <button onclick="quickCmd('I30100')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I30100 SENSORS</button>
+    <button onclick="quickCmd('I50100')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I50100 DATE/TIME</button>
+    <button onclick="quickCmd('I60100')" style="background:#111;border:1px solid #226622;color:#33ff33;font-family:'VT323',monospace;padding:3px 10px;cursor:pointer;font-size:14px;">I60100 TANK CFG</button>
+</div>
+
+<!-- ========================================================================
+     Console Output Area
+     ========================================================================
+     A scrollable div that serves as the running log of all commands sent
+     and responses received during this session.
+
+     - id="console-output" — Referenced by JavaScript to append new text.
+     - class="terminal-block" — Applies the monospaced, green-on-black
+       terminal styling defined in the base stylesheet.
+     - min-height/max-height — Ensures the output area is always visible
+       (at least 300px tall) but won't grow beyond 600px; overflow-y:auto
+       adds a vertical scrollbar when content exceeds the max height.
+     - Initial content shows a "Ready" prompt to indicate the console is
+       operational and awaiting input.
+     ======================================================================== -->
+<div id="console-output" class="terminal-block" style="min-height: 300px; max-height: 600px; overflow-y: auto;">
+&gt; Ready. Type a command or click a quick button above.
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<!-- ========================================================================
+     JavaScript — Command Submission & Console Interaction
+     ========================================================================
+     All console interactivity is handled client-side. No page reloads occur;
+     commands are sent asynchronously and responses are appended to the
+     console output div in real time.
+     ======================================================================== -->
+<script>
+/* --------------------------------------------------------------------------
+   DOM Element References
+   --------------------------------------------------------------------------
+   Cache references to the console output div and the command input field
+   so we don't have to query the DOM on every interaction.
+   -------------------------------------------------------------------------- */
+const output = document.getElementById('console-output');
+const input = document.getElementById('cmd-input');
+
+/* --------------------------------------------------------------------------
+   appendOutput(text)
+   --------------------------------------------------------------------------
+   Appends a line of text to the console output area and automatically
+   scrolls to the bottom so the most recent output is always visible.
+   Uses textContent (not innerHTML) to safely display raw ATG responses
+   without risk of HTML injection.
+   -------------------------------------------------------------------------- */
+function appendOutput(text) {
+    output.textContent += '\n' + text;
+    output.scrollTop = output.scrollHeight;
+}
+
+/* --------------------------------------------------------------------------
+   sendCmd()  —  Async Command Submission
+   --------------------------------------------------------------------------
+   Reads the current value of the command input field, clears it, echoes
+   the command to the console output (prefixed with ">"), and sends it to
+   the server via an asynchronous POST request to /api/command.
+
+   Request format:
+     POST /api/command
+     Content-Type: application/json
+     Body: { "command": "<TLS command string>" }
+
+   Expected response format (JSON):
+     Success: { "response": "<raw ATG output text>" }
+     Error:   { "error": "<error description>" }
+
+   If the fetch() call itself fails (e.g., network error, server down),
+   the catch block displays a CONNECTION ERROR message in the console.
+
+   Flow:
+     1. Read and trim the input value; abort if empty.
+     2. Clear the input field so the operator can type the next command.
+     3. Echo the command to the console output for reference.
+     4. POST the command to /api/command as JSON.
+     5. Parse the JSON response.
+     6. If data.error exists, display "ERROR: ..." in the console.
+     7. Otherwise, display the raw response text from data.response.
+     8. On network/fetch failure, display "CONNECTION ERROR: ..." instead.
+   -------------------------------------------------------------------------- */
+async function sendCmd() {
+    const cmd = input.value.trim();
+    if (!cmd) return;
+    input.value = '';
+
+    appendOutput('\n> ' + cmd);
+
+    try {
+        const resp = await fetch('/api/command', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({command: cmd})
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+            appendOutput('ERROR: ' + data.error);
+        } else {
+            appendOutput(data.response);
+        }
+    } catch (e) {
+        appendOutput('CONNECTION ERROR: ' + e.message);
+    }
+}
+
+/* --------------------------------------------------------------------------
+   quickCmd(cmd)  —  Quick-Access Button Handler
+   --------------------------------------------------------------------------
+   Called by each quick-access button's onclick handler. Sets the input
+   field's value to the pre-defined command string and immediately calls
+   sendCmd() to execute it. This provides a one-click shortcut for common
+   TLS commands without the operator needing to type anything.
+   -------------------------------------------------------------------------- */
+function quickCmd(cmd) {
+    input.value = cmd;
+    sendCmd();
+}
+</script>
+{% endblock %}

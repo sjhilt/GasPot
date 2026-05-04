@@ -1,0 +1,102 @@
+{# ============================================================================
+   reports.html — TLS-350 Report Viewer
+   ============================================================================
+   This template renders the REPORTS page of the TLS-350 HMI (Human-Machine
+   Interface). It extends "base.html" to inherit the common site layout
+   (header, navigation sidebar, footer, stylesheets, etc.).
+
+   Key features:
+     1. Tabbed navigation — A horizontal row of links lets the operator switch
+        between five report categories: DELIVERY, LEAK DETECT, DIAGNOSTICS,
+        SENSORS, and TANK CONFIG. The active tab is highlighted via the Jinja2
+        conditional that adds the "active" CSS class when report_type matches.
+
+     2. Report output — The report text for the currently selected tab is
+        rendered inside a styled terminal-style block. The variable
+        "report_text" is populated server-side by querying the ATG (Automatic
+        Tank Gauge) backend with the appropriate TLS command for the chosen
+        report type.
+
+     3. Connection failure warning — If the backend could not reach the ATG
+        device (i.e. the "connected" flag is False), a red-styled warning
+        banner is displayed to alert the operator that ATG communication has
+        failed.
+
+   Template variables expected from the server:
+     - report_type  (str)  : One of 'delivery', 'leak', 'diagnostics',
+                              'sensors', or 'config'. Determines which tab
+                              appears active.
+     - report_text  (str)  : Pre-formatted text output of the selected report,
+                              ready for display in the terminal block.
+     - connected    (bool) : Whether the HMI successfully connected to the
+                              ATG device. When False, the failure banner shows.
+   ============================================================================ #}
+
+{% extends "base.html" %}
+
+{# --- Page title (appears in the browser tab via base.html's <title> block) --- #}
+{% block title %}TLS-350 - REPORTS{% endblock %}
+
+{% block content %}
+{# --- Page heading displayed at the top of the content area --- #}
+<div class="page-title">REPORTS</div>
+
+<!-- ========================================================================
+     Tabbed Report Navigation
+     ========================================================================
+     Each tab is a plain anchor (<a>) that navigates to the same /reports
+     endpoint but with a different "type" query parameter. The server reads
+     this parameter, fetches the corresponding report from the ATG, and
+     re-renders this template with the updated report_text.
+
+     The Jinja2 expression {% if report_type == '...' %}active{% endif %}
+     conditionally applies the "active" CSS class to highlight the currently
+     selected tab, giving the operator a clear visual indicator of which
+     report category they are viewing.
+
+     Tab → Query param → TLS command mapping (handled server-side):
+       DELIVERY    → ?type=delivery    → I20200 (delivery report)
+       LEAK DETECT → ?type=leak        → I20300 (leak detection report)
+       DIAGNOSTICS → ?type=diagnostics → I20700 (diagnostics report)
+       SENSORS     → ?type=sensors     → I30100 (sensor status report)
+       TANK CONFIG → ?type=config      → I60100 (tank configuration report)
+     ======================================================================== -->
+<div class="report-tabs">
+    <a href="/reports?type=delivery" class="{% if report_type == 'delivery' %}active{% endif %}">DELIVERY</a>
+    <a href="/reports?type=leak" class="{% if report_type == 'leak' %}active{% endif %}">LEAK DETECT</a>
+    <a href="/reports?type=diagnostics" class="{% if report_type == 'diagnostics' %}active{% endif %}">DIAGNOSTICS</a>
+    <a href="/reports?type=sensors" class="{% if report_type == 'sensors' %}active{% endif %}">SENSORS</a>
+    <a href="/reports?type=config" class="{% if report_type == 'config' %}active{% endif %}">TANK CONFIG</a>
+</div>
+
+<!-- ========================================================================
+     Report Output Block
+     ========================================================================
+     Displays the pre-formatted report text returned by the server inside a
+     styled "terminal-block" div. The CSS class "terminal-block" applies a
+     monospaced font, dark background, and green text to emulate the look of
+     a real Veeder-Root TLS-350 console screen.
+
+     The {{ report_text }} variable contains the raw text output of the
+     selected TLS command, preserving whitespace and line breaks as they
+     would appear on the physical device's serial output.
+     ======================================================================== -->
+<div class="terminal-block">{{ report_text }}</div>
+
+<!-- ========================================================================
+     ATG Connection Failure Warning
+     ========================================================================
+     Shown only when the "connected" template variable is False, meaning the
+     HMI's backend was unable to establish a TCP connection to the ATG device
+     (e.g., the GasPot honeypot simulator or a real TLS-350 unit).
+
+     The warning is rendered in red text with a red border to draw the
+     operator's attention. This mimics the alarm/error styling found on
+     actual fuel-management HMI systems.
+     ======================================================================== -->
+{% if not connected %}
+<div class="terminal-block" style="color: #ff3333; border-color: #ff3333;">
+*** ATG CONNECTION FAILED ***
+</div>
+{% endif %}
+{% endblock %}

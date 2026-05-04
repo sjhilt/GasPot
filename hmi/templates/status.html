@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}TLS-350 - SYSTEM STATUS{% endblock %}
+
+{% block content %}
+<div class="page-title">SYSTEM STATUS</div>
+<div class="terminal-block">{{ sys_status }}</div>
+
+<div class="page-title" style="font-size: 22px;">IN-TANK STATUS</div>
+{% if tank_statuses %}
+<table class="inv-table">
+    <thead>
+        <tr>
+            <th>TANK</th>
+            <th>PRODUCT</th>
+            <th>STATUS</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in tank_statuses %}
+        <tr>
+            <td>{{ s.tank_id }}</td>
+            <td>{{ s.product }}</td>
+            <td class="{% if 'ALARM' in s.status.upper() %}status-alarm{% elif 'WARN' in s.status.upper() %}status-warning{% else %}status-normal{% endif %}">
+                {{ s.status }}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="terminal-block">NO TANK STATUS DATA AVAILABLE</div>
+{% endif %}
+
+{% if not connected %}
+<div class="terminal-block" style="color: #ff3333; border-color: #ff3333;">
+*** ATG CONNECTION FAILED ***
+</div>
+{% endif %}
+{% endblock %}

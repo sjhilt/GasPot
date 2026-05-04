@@ -57,3 +57,18 @@ min_vol = 1000
 max_vol = 9050
 min_ullage = 3000
 max_ullage = 9999
+
+# Fuel consumption simulation -- makes tank levels drop over time
+# like a real gas station selling fuel.  A delivery is triggered
+# automatically when any tank drops below delivery_threshold %.
+[consumption]
+# Enable/disable consumption simulation (true/false)
+enabled = true
+# Gallons consumed per hour per tank (randomized ±30% per tank)
+# A not-super-busy station sells roughly 200-400 GPH total across
+# all tanks.  50-120 GPH per tank is realistic for a quiet station.
+gallons_per_hour = 80
+# When a tank drops below this fill % a delivery is triggered
+delivery_threshold = 20
+# Delivery fills the tank to this % (realistic: 85-95%)
+delivery_fill_to = 85
