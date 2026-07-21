@@ -145,7 +145,7 @@
             <th>TEMP</th>
         </tr>
     </thead>
-    <!-- #inv-tbody — the AJAX updater rebuilds this element's innerHTML
+    <!-- #inv-tbody — the AJAX updater safely rebuilds this element
          every 10 seconds with fresh data from /api/inventory.            -->
     <tbody id="inv-tbody">
         {% for t in tanks %}
@@ -250,23 +250,32 @@ setInterval(async () => {
         });
 
         /* -- Step 4: REBUILD THE DETAIL TABLE -----------------------------
-           Rather than patching individual cells, we regenerate the entire
-           <tbody> innerHTML from the updated data.  This is simpler and
-           handles tanks being added or removed between polls.              */
+           Rebuild the table with DOM APIs and textContent instead of
+           innerHTML. Product labels can be changed through the emulated
+           ATG S602xx commands, so treating every field as text prevents
+           HTML/script injection in the HMI while preserving honeypot
+           protocol behavior.                                               */
         const tbody = document.getElementById('inv-tbody');
         if (tbody) {
-            tbody.innerHTML = data.tanks.map(t => `
-                <tr>
-                    <td>${t.tank_id}</td>
-                    <td>${t.product}</td>
-                    <td>${t.volume}</td>
-                    <td>${t.tc_volume}</td>
-                    <td>${t.ullage}</td>
-                    <td>${t.height}</td>
-                    <td>${t.water}</td>
-                    <td>${t.temperature}</td>
-                </tr>
-            `).join('');
+            tbody.replaceChildren();
+            data.tanks.forEach(t => {
+                const row = document.createElement('tr');
+                [
+                    t.tank_id,
+                    t.product,
+                    t.volume,
+                    t.tc_volume,
+                    t.ullage,
+                    t.height,
+                    t.water,
+                    t.temperature,
+                ].forEach(value => {
+                    const cell = document.createElement('td');
+                    cell.textContent = value;
+                    row.appendChild(cell);
+                });
+                tbody.appendChild(row);
+            });
         }
 
         /* -- Step 5: UPDATE CONNECTION INDICATOR --------------------------

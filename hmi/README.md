@@ -29,6 +29,8 @@ python app.py
 
 Then open **http://localhost:5000** in your browser.
 
+By default, the HMI binds to `127.0.0.1` so the web console is only reachable from the local machine. If you intentionally want the HMI to respond on other interfaces, start it with `--host 0.0.0.0` or a specific interface address.
+
 ## Command Line Options
 
 ```
@@ -36,7 +38,7 @@ python app.py [OPTIONS]
 
   --gaspot-host HOST   GasPot IP address (default: 127.0.0.1)
   --gaspot-port PORT   GasPot TCP port (default: 10001)
-  --host HOST          HMI listen address (default: 0.0.0.0)
+  --host HOST          HMI listen address (default: 127.0.0.1; use 0.0.0.0 to expose on all interfaces)
   --port PORT          HMI web port (default: 5000)
   --debug              Enable Flask debug mode
 ```

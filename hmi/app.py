@@ -19,9 +19,10 @@ the ATGClient.  The dashboard also has JavaScript that polls the
 /api/inventory endpoint every 10 seconds to keep the gauges live.
 
 Usage:
-    python app.py                          # defaults: GasPot on localhost:10001
+    python app.py                          # defaults: GasPot on localhost:10001; HMI on 127.0.0.1:5000
     python app.py --gaspot-host 10.0.0.5   # remote GasPot
     python app.py --port 8080              # HMI on different port
+    python app.py --host 0.0.0.0           # intentionally expose HMI on all interfaces
 
 Pages:
     /          Dashboard -- tank gauges + inventory table (F1)
@@ -344,8 +345,11 @@ def parse_args():
                         help="GasPot host (default: 127.0.0.1)")
     parser.add_argument("--gaspot-port", type=int, default=10001,
                         help="GasPot port (default: 10001)")
-    parser.add_argument("--host", default="0.0.0.0",
-                        help="HMI listen address (default: 0.0.0.0)")
+    # Bind the HMI to localhost by default so the web console is not exposed
+    # on the network accidentally. Use --host 0.0.0.0 intentionally if you
+    # want the HMI to respond on other interfaces.
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="HMI listen address (default: 127.0.0.1; use 0.0.0.0 to expose on all interfaces)")
     parser.add_argument("--port", type=int, default=5000,
                         help="HMI listen port (default: 5000)")
     parser.add_argument("--debug", action="store_true",
