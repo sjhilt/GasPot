@@ -264,7 +264,7 @@ def api_inventory():
         "tanks": [
             {
                 "tank_id": 1,
-                "product": "SUPER",
+                    "product": "SUPER",
                 "volume": 1906,
                 "fill_pct": 31.7,
                 ...

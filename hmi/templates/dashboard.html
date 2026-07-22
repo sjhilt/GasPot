@@ -76,16 +76,16 @@
              GAUGE VISUAL
              ---------------------------------------------------------------
              .gauge-container – The outer border that represents 100%.
-             .gauge-fill      – An inner <div> whose CSS height is set to
-                                fill_pct%.  This creates the "liquid bar"
-                                effect.  The data-tank attribute is used
-                                by JavaScript to target this element during
-                                AJAX updates.
+             .gauge-fill      – An inner <div> whose CSS height is set by
+                                JavaScript from data-initial-fill / API data.
+                                This creates the "liquid bar" effect while
+                                avoiding Jinja expressions inside CSS values.
              .gauge-label     – Overlaid text showing the numeric %.
              --------------------------------------------------------------- -->
         <div class="gauge-container">
-            <div class="gauge-fill" style="height: {{ fill_pct|round(1) }}%"
-                 data-tank="{{ t.tank_id }}"></div>
+            <div class="gauge-fill"
+                 data-tank="{{ t.tank_id }}"
+                 data-initial-fill="{{ fill_pct|round(1) }}"></div>
             <div class="gauge-label">{{ fill_pct|round(1) }}%</div>
         </div>
 
@@ -190,6 +190,16 @@ Check that GasPot is running and accessible.
    ========================================================================= #}
 {% block extra_scripts %}
 <script>
+/* Initialize server-rendered gauge heights without embedding Jinja expressions
+   directly in CSS style values. This keeps editors/linters happy and still
+   renders the initial fill level before the first AJAX poll. */
+document.querySelectorAll('.gauge-fill[data-initial-fill]').forEach(fill => {
+    const pct = Number.parseFloat(fill.dataset.initialFill);
+    if (Number.isFinite(pct)) {
+        fill.style.height = pct + '%';
+    }
+});
+
 /*  -------------------------------------------------------------------------
     AJAX INVENTORY POLLER
     -------------------------------------------------------------------------

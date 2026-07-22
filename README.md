@@ -96,6 +96,9 @@ python3 GasPot.py --quiet --json-log
 ```bash
 # Send an In-Tank Inventory request (I20100)
 echo -ne '\x01I20100\n' | nc localhost 10001
+
+# Send a Sensor Status request (I30100)
+echo -ne '\x01I30100\n' | nc localhost 10001
 ```
 
 ---
@@ -220,15 +223,34 @@ TANK   PRODUCT                 STATUS
 ## Command-Line Options
 
 ```
-usage: GasPot.py [-h] [--config CONFIG] [--log LOG] [--json-log] [--quiet] [--version]
+usage: GasPot.py [-h] [--config CONFIG] [--log LOG] [--json-log] [--quiet]
+                 [--delay-min DELAY_MIN] [--delay-max DELAY_MAX] [--version]
 
 Options:
-  --config CONFIG   Configuration file path (default: config.ini)
-  --log LOG         Log file path (default: gaspot.log)
-  --json-log        Emit logs as JSON lines (for SIEM/Splunk/ELK)
-  --quiet           Suppress console output; log only to file
-  --version         Show version and exit
+  --config CONFIG        Configuration file path (default: config.ini)
+  --log LOG              Log file path (default: gaspot.log)
+  --json-log             Emit logs as JSON lines (for SIEM/Splunk/ELK)
+  --quiet                Suppress console output; log only to file
+  --delay-min DELAY_MIN  Minimum response delay in seconds; overrides config
+  --delay-max DELAY_MAX  Maximum response delay in seconds; overrides config
+  --version              Show version and exit
 ```
+
+### Optional Response Delay
+
+GasPot responds immediately by default. If you want command responses to look less fingerprintable by timing, enable a small randomized response delay either in `config.ini` or from the command line:
+
+```ini
+[response]
+delay_min = 0.15
+delay_max = 0.75
+```
+
+```bash
+python3 GasPot.py --delay-min 0.15 --delay-max 0.75
+```
+
+Leaving both values at `0.0` preserves the original immediate-response behavior.
 
 ---
 
@@ -263,7 +285,22 @@ min_vol = 1000
 max_vol = 9050
 min_ullage = 3000
 max_ullage = 9999
+
+[response]
+delay_min = 0.0
+delay_max = 0.0
 ```
+
+### Protocol-Preserving Input Handling
+
+GasPot intentionally keeps the emulated ATG protocol unauthenticated. To stay true to the TLS-style command surface while reducing implementation risk, the parser performs lightweight protocol-shape checks:
+
+- Commands must be framed with SOH (`0x01`) or literal `^A`.
+- Command codes are six characters: `I` or `S` followed by five digits.
+- Unknown or malformed commands return the standard ATG-style error response `9999FF1B`.
+- Display-oriented set-command payloads are capped and stripped of control characters before being reflected in simulated reports.
+
+This preserves honeypot behavior while preventing malformed inputs from causing parser exceptions or display/log pollution.
 
 **Tip:** Localise station names and product labels to match the region where you deploy the honeypot. This makes it harder for attackers to fingerprint it as a honeypot.
 

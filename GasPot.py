@@ -30,6 +30,7 @@ import signal
 import socket
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -43,6 +44,13 @@ REFERENCE_TEMP = 60.0     # API standard temp for TC volume correction
 # Logging setup
 
 logger = logging.getLogger("gaspot")
+
+# Protocol-preserving hardening limits. These do not add authentication or
+# remove any emulated ATG commands; they keep malformed input from causing
+# parser exceptions or unbounded display/log pollution.
+MAX_COMMAND_BYTES = 4096
+MAX_STATION_NAME_LEN = 80
+MAX_PRODUCT_LABEL_LEN = 22
 
 
 def _setup_logging(log_path: str, quiet: bool, json_log: bool) -> None:
@@ -348,6 +356,30 @@ def build_station(config: configparser.ConfigParser) -> StationState:
 def _ts(station: StationState) -> str:
     # formatted timestamp for response headers
     return station.now.strftime("%m/%d/%Y %H:%M")
+
+
+def _sanitize_display_text(value: str, max_len: int) -> str:
+    """Return printable, single-line text for simulated display fields.
+
+    The real TLS protocol uses simple display labels. Keep set/write commands
+    working for honeypot telemetry, but strip control characters and cap field
+    lengths so payloads cannot inject terminal controls or oversized text into
+    simulated reports/logs.
+    """
+    blocked = set('<>"\'`&')
+    cleaned = "".join(ch if 32 <= ord(ch) <= 126 and ch not in blocked else " " for ch in value)
+    cleaned = " ".join(cleaned.split())
+    return cleaned[:max_len]
+
+
+def _is_valid_command_code(cmd: str) -> bool:
+    """Validate the six-character TLS command-code shape.
+
+    Supported command codes in this emulator are I/S followed by five digits
+    (for example I20100 or S60201). Unknown but well-formed codes still get the
+    normal ATG error response; malformed codes are rejected the same way.
+    """
+    return len(cmd) == 6 and cmd[0] in {"I", "S"} and cmd[1:].isdigit()
 
 
 # I101xx -- System Status Report
@@ -965,7 +997,7 @@ def cmd_S50100(station: StationState, payload: str) -> str:
 
 def cmd_S60100(station: StationState, payload: str) -> str:
     # rename the station -- log this
-    new_name = payload.strip()
+    new_name = _sanitize_display_text(payload, MAX_STATION_NAME_LEN)
     if not new_name:
         return "9999FF1B\n"
     old_name = station.name
@@ -985,15 +1017,12 @@ def cmd_S60100(station: StationState, payload: str) -> str:
 
 def cmd_S602xx(station: StationState, payload: str, cmd: str) -> str:
     tank_digit = cmd[5]  # '0' = all, '1'-'4' = individual
-    new_label = payload.strip()
+    new_label = _sanitize_display_text(payload, MAX_PRODUCT_LABEL_LEN)
 
     if not new_label:
         return "9999FF1B\n"
 
-    if len(new_label) > 22:
-        new_label = new_label[:20] + "  "
-    else:
-        new_label = new_label.ljust(22)
+    new_label = new_label.ljust(MAX_PRODUCT_LABEL_LEN)
 
     if tank_digit == "0":
         for t in station.tanks:
@@ -1084,6 +1113,16 @@ def handle_command(station: StationState, raw: bytes, remote_ip: str) -> str | N
     cmd = cmd_area[:6]
     payload = cmd_area[6:]
 
+    if not _is_valid_command_code(cmd):
+        logger.warning(
+            "MALFORMED CMD %r from %s raw=%r",
+            cmd,
+            remote_ip,
+            decoded[:80],
+            extra={"remote_ip": remote_ip, "command": cmd},
+        )
+        return None
+
     # 1. Exact-match inquiry commands
     if cmd in INQUIRY_COMMANDS:
         logger.info(
@@ -1105,8 +1144,8 @@ def handle_command(station: StationState, raw: bytes, remote_ip: str) -> str | N
         )
         return SET_COMMANDS[cmd](station, payload)
 
-    # 3. S602xx  -- set product label (variable last digit)
-    if cmd.startswith("S6020"):
+    # 3. S602xx  -- set product label (S60200 all, S60201-S60204 per tank)
+    if cmd in {"S60200", "S60201", "S60202", "S60203", "S60204"}:
         logger.warning(
             "SET CMD %s from %s payload=%r",
             cmd,
@@ -1253,8 +1292,23 @@ def run_server(station: StationState, host: str, port: int, buffer_size: int,
     else:
         logger.info("Consumption simulation OFF (tank levels stay static)")
 
-    import time as _time
-    last_tick = _time.monotonic()
+    # Optional response delay to make timing less fingerprintable. Disabled by
+    # default to preserve current behavior; set [response] delay_min/delay_max
+    # in the config, or use --delay-min/--delay-max, to add realistic latency.
+    response_delay_min = 0.0
+    response_delay_max = 0.0
+    if config and config.has_section("response"):
+        response_delay_min = max(0.0, config.getfloat("response", "delay_min", fallback=0.0))
+        response_delay_max = max(0.0, config.getfloat("response", "delay_max", fallback=response_delay_min))
+        if response_delay_max < response_delay_min:
+            response_delay_min, response_delay_max = response_delay_max, response_delay_min
+
+    if response_delay_max > 0:
+        logger.info("Response delay ON  |  %.3fs-%.3fs", response_delay_min, response_delay_max)
+    else:
+        logger.info("Response delay OFF")
+
+    last_tick = time.monotonic()
 
     active: list[socket.socket] = [server]
     shutdown_event = threading.Event()
@@ -1276,7 +1330,7 @@ def run_server(station: StationState, host: str, port: int, buffer_size: int,
             # Consumption tick -- runs every select() cycle (~2 seconds)
             # even when no connections come in, so tanks drain continuously
             if consumption_enabled:
-                now_mono = _time.monotonic()
+                now_mono = time.monotonic()
                 elapsed = now_mono - last_tick
                 last_tick = now_mono
                 _tick_consumption(station, elapsed, delivery_threshold, delivery_fill_to)
@@ -1295,7 +1349,7 @@ def run_server(station: StationState, host: str, port: int, buffer_size: int,
                     except OSError:
                         continue
                 else:
-                    _handle_client(sock, active, station)
+                    _handle_client(sock, active, station, buffer_size, response_delay_min, response_delay_max)
     finally:
         for s in active:
             try:
@@ -1309,6 +1363,9 @@ def _handle_client(
     conn: socket.socket,
     active: list[socket.socket],
     station: StationState,
+    buffer_size: int = MAX_COMMAND_BYTES,
+    response_delay_min: float = 0.0,
+    response_delay_max: float = 0.0,
 ) -> None:
     # Handle one client connection
     try:
@@ -1319,19 +1376,22 @@ def _handle_client(
         return
 
     try:
-        data = conn.recv(4096)
+        max_bytes = max(64, min(buffer_size, MAX_COMMAND_BYTES))
+        data = conn.recv(max_bytes)
         if not data:
             _close(conn, active)
             return
 
         # Read until we see a newline or '00' terminator (TLS protocol)
-        while b"\n" not in data and b"00" not in data:
-            more = conn.recv(4096)
+        while b"\n" not in data and b"00" not in data and len(data) < max_bytes:
+            more = conn.recv(max_bytes - len(data))
             if not more:
                 break
             data += more
 
         response = handle_command(station, data, remote_ip)
+        if response_delay_max > 0:
+            time.sleep(random.uniform(response_delay_min, response_delay_max))
         if response is not None:
             # Wrap in SOH...ETX envelope per Veeder-Root display format spec
             wrapped = f"{SOH}{response}{ETX}"
@@ -1410,6 +1470,18 @@ Supported commands:
         help="suppress console output; log only to file",
     )
     parser.add_argument(
+        "--delay-min",
+        type=float,
+        default=None,
+        help="minimum response delay in seconds (overrides [response] delay_min)",
+    )
+    parser.add_argument(
+        "--delay-max",
+        type=float,
+        default=None,
+        help="maximum response delay in seconds (overrides [response] delay_max)",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"GasPot {__version__}",
@@ -1435,6 +1507,14 @@ def main(argv: list[str] | None = None) -> None:
 
     config = configparser.ConfigParser()
     config.read(str(config_path))
+
+    if args.delay_min is not None or args.delay_max is not None:
+        if not config.has_section("response"):
+            config.add_section("response")
+        if args.delay_min is not None:
+            config.set("response", "delay_min", str(max(0.0, args.delay_min)))
+        if args.delay_max is not None:
+            config.set("response", "delay_max", str(max(0.0, args.delay_max)))
 
     # Build station
     station = build_station(config)
