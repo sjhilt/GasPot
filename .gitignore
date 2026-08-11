@@ -4,3 +4,4 @@ __pycache__/
 *.pyo
 .DS_Store
 gaspot.log
+*.log
